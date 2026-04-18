@@ -10,11 +10,11 @@ Usage :
 Le script ouvre le navigateur, te demande de te connecter à Google,
 puis affiche le refresh_token à copier dans .env.
 """
-import json
+import argparse
 import sys
 import webbrowser
 from pathlib import Path
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Ajoute apps/api au path pour importer les dépendances installées dans le venv
@@ -30,6 +30,8 @@ REDIRECT_URI = "http://localhost:8080"
 
 
 def main() -> None:
+    args = _parse_args()
+
     print("\n  Configuration OAuth2 Gmail")
     print("  " + "─" * 40)
     print()
@@ -37,9 +39,15 @@ def main() -> None:
     print("  (APIs & Services → Credentials → ton OAuth 2.0 Client ID)")
     print()
 
-    client_id = input("  Client ID     : ").strip()
-    client_secret = input("  Client Secret : ").strip()
-    account_label = input("  Compte (1 ou 2 pour identifier dans .env) : ").strip()
+    client_id = args.client_id.strip() if args.client_id else input("  Client ID     : ").strip()
+    client_secret = (
+        args.client_secret.strip() if args.client_secret else input("  Client Secret : ").strip()
+    )
+    account_label = (
+        args.account_label.strip()
+        if args.account_label
+        else input("  Compte (1 ou 2 pour identifier dans .env) : ").strip()
+    )
 
     if not client_id or not client_secret:
         print("\n  ERREUR : client_id et client_secret sont obligatoires.")
@@ -88,6 +96,14 @@ def main() -> None:
     print(f"  GMAIL_CLIENT_SECRET_{account_label}={client_secret}")
     print(f"  GMAIL_REFRESH_TOKEN_{account_label}={credentials.refresh_token}")
     print()
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Assistant setup OAuth2 Gmail.")
+    parser.add_argument("--client-id", type=str, default="")
+    parser.add_argument("--client-secret", type=str, default="")
+    parser.add_argument("--account-label", type=str, default="")
+    return parser.parse_args()
 
 
 def _wait_for_callback() -> str | None:
