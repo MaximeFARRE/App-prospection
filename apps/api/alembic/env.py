@@ -8,10 +8,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Importer ici la base déclarative pour les migrations autogénérées
-# from app.db.base import Base
-# target_metadata = Base.metadata
-target_metadata = None
+from app.db.base import Base  # noqa: E402 — doit être importé après fileConfig
+
+# Tous les modèles doivent être importés ici pour qu'Alembic les détecte
+# lors du --autogenerate. Ajouter une ligne par modèle au fur et à mesure.
+import app.models  # noqa: F401
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
