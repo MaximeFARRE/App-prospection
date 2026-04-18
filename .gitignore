@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Base de données
+data/app.db
+*.db
+*.sqlite
+
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Données importées/exportées (ne pas versionner les CSV de travail)
+data/imports/*.csv
+data/exports/*.csv
+
+# Gmail OAuth tokens (sensibles)
+token*.json
+credentials.json

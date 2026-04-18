@@ -1,0 +1,10 @@
+Objet : Re : Candidature stage – {{entreprise}}
+
+Bonjour,
+
+[Corps de la relance 1 à rédiger]
+
+Variables disponibles : {{prenom}}, {{nom}}, {{entreprise}}, {{poste}}, {{campagne}}
+
+Cordialement,
+Maxime Farré

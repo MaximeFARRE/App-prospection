@@ -1,0 +1,10 @@
+Objet : Candidature stage – Gestion d'actifs – {{prenom}} {{nom}}
+
+Bonjour,
+
+[Corps du mail à rédiger]
+
+Variables disponibles : {{prenom}}, {{nom}}, {{entreprise}}, {{poste}}, {{campagne}}
+
+Cordialement,
+Maxime Farré
