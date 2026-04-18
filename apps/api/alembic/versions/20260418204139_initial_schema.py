@@ -17,6 +17,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # ── companies ──────────────────────────────────────────────────────────────
+    op.create_table(
+        "companies",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("name", sa.String(255), nullable=False, unique=True),
+        sa.Column("website", sa.String(500), nullable=True),
+        sa.Column("linkedin_url", sa.String(500), nullable=True),
+        sa.Column("country", sa.String(100), nullable=True),
+        sa.Column("source_business_id", sa.String(100), nullable=True),
+        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
+    )
+    op.create_index("ix_companies_name", "companies", ["name"])
+    op.create_index("ix_companies_source_business_id", "companies", ["source_business_id"])
+
+    # ── contacts ───────────────────────────────────────────────────────────────
     op.create_table(
         "contacts",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -24,10 +39,14 @@ def upgrade() -> None:
         sa.Column("last_name", sa.String(100), nullable=True),
         sa.Column("email", sa.String(255), nullable=True, unique=True),
         sa.Column("email_normalized", sa.String(255), nullable=True, unique=True),
-        sa.Column("company", sa.String(255), nullable=True),
         sa.Column("job_title", sa.String(255), nullable=True),
+        sa.Column("country", sa.String(100), nullable=True),
+        sa.Column("phone", sa.String(50), nullable=True),
         sa.Column("linkedin_url", sa.String(500), nullable=True),
-        sa.Column("source", sa.String(100), nullable=True),
+        sa.Column("company_id", sa.Integer, sa.ForeignKey("companies.id"), nullable=True),
+        sa.Column("source", sa.String(255), nullable=True),
+        sa.Column("source_prospect_id", sa.String(100), nullable=True),
+        sa.Column("source_business_id", sa.String(100), nullable=True),
         sa.Column("notes", sa.Text, nullable=True),
         sa.Column("is_blocked", sa.Boolean, nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
@@ -35,7 +54,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_contacts_email", "contacts", ["email"])
     op.create_index("ix_contacts_email_normalized", "contacts", ["email_normalized"])
+    op.create_index("ix_contacts_company_id", "contacts", ["company_id"])
+    op.create_index("ix_contacts_source_prospect_id", "contacts", ["source_prospect_id"])
+    op.create_index("ix_contacts_source_business_id", "contacts", ["source_business_id"])
 
+    # ── imports ────────────────────────────────────────────────────────────────
     op.create_table(
         "imports",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -48,6 +71,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
 
+    # ── campaign_states ────────────────────────────────────────────────────────
     op.create_table(
         "campaign_states",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -67,6 +91,7 @@ def upgrade() -> None:
     op.create_index("ix_campaign_states_contact_id", "campaign_states", ["contact_id"])
     op.create_index("ix_campaign_states_campaign_name", "campaign_states", ["campaign_name"])
 
+    # ── messages ───────────────────────────────────────────────────────────────
     op.create_table(
         "messages",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -81,6 +106,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
 
+    # ── replies ────────────────────────────────────────────────────────────────
     op.create_table(
         "replies",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -102,3 +128,4 @@ def downgrade() -> None:
     op.drop_table("campaign_states")
     op.drop_table("imports")
     op.drop_table("contacts")
+    op.drop_table("companies")

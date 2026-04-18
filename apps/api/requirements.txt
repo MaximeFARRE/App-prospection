@@ -1,4 +1,7 @@
-# Web framework
+# Interface desktop
+PyQt6>=6.7.0
+
+# Web framework (pour OpenClaw uniquement)
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 

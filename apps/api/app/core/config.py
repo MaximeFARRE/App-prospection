@@ -1,5 +1,12 @@
+import os
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Racine du projet = 3 niveaux au-dessus de ce fichier (core/ → app/ → api/ → Apps prospection/)
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_DEFAULT_DB_URL = f"sqlite:///{(_PROJECT_ROOT / 'data' / 'app.db').as_posix()}"
 
 
 class GmailAccount(BaseSettings):
@@ -25,7 +32,7 @@ class Settings(BaseSettings):
     )
 
     # ─── Base de données ───────────────────────────────────────────────────────
-    database_url: str = "sqlite:///./data/app.db"
+    database_url: str = _DEFAULT_DB_URL
 
     # ─── API ───────────────────────────────────────────────────────────────────
     api_host: str = "localhost"

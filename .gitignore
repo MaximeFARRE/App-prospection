@@ -17,15 +17,13 @@ data/app.db
 .env.local
 .env.*.local
 
-# Node
-node_modules/
+# Build PyQt6 / PyInstaller
+build/
 dist/
-dist-ssr/
-.vite/
+*.spec
 
 # Logs
 *.log
-npm-debug.log*
 
 # OS
 .DS_Store
