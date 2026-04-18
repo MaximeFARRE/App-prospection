@@ -9,11 +9,9 @@ from app.models.contact import Contact
 from app.models.message import Message
 from app.models.reply import Reply
 
-
 CONTACT_PAGE_SIZE_DEFAULT = 50
 CONTACT_PAGE_SIZE_MAX = 200
 EMAIL_STATUS_MISSING = "__missing__"
-
 
 def get_all(
     db: Session,
@@ -21,7 +19,6 @@ def get_all(
 ) -> list[Contact]:
     """Retourne une liste paginée de contacts avec filtres optionnels."""
     parsed = _parse_filters(filters)
-
     query = db.query(Contact, Company).outerjoin(Company, Company.id == Contact.company_id)
     query = _apply_filters(query, parsed)
 
@@ -57,7 +54,6 @@ def count(
 ) -> int:
     """Compte les contacts selon les filtres."""
     parsed = _parse_filters(filters)
-
     query = db.query(Contact.id).outerjoin(Company, Company.id == Contact.company_id)
     query = _apply_filters(query, parsed)
 
@@ -99,6 +95,7 @@ def search(
 def get_stats(db: Session) -> dict[str, Any]:
     """Retourne les compteurs globaux du dashboard."""
     contacts_total = int(db.query(func.count(Contact.id)).scalar() or 0)
+    companies_total = int(db.query(func.count(Company.id)).scalar() or 0)
     contacts_blocked = int(
         db.query(func.count(Contact.id)).filter(Contact.is_blocked.is_(True)).scalar() or 0
     )
@@ -128,9 +125,11 @@ def get_stats(db: Session) -> dict[str, Any]:
 
     return {
         "contacts_total": contacts_total,
+        "companies_total": companies_total,
         "contacts_active": max(contacts_total - contacts_blocked, 0),
         "contacts_blocked": contacts_blocked,
         "messages_total": messages_total,
+        "emails_sent_total": messages_total,
         "messages_intro_sent": messages_intro_sent,
         "replies_total": replies_total,
         "reply_rate_percent": reply_rate_percent,
@@ -203,7 +202,6 @@ def _apply_filters(query, filters: dict[str, Any]):
 
 def _parse_filters(filters: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = dict(filters or {})
-
     limit = _to_positive_int(
         payload.get("limit", payload.get("page_size", CONTACT_PAGE_SIZE_DEFAULT)),
         CONTACT_PAGE_SIZE_DEFAULT,
