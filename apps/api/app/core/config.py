@@ -56,8 +56,16 @@ class Settings(BaseSettings):
 
     # ─── Limites d'envoi ───────────────────────────────────────────────────────
     daily_send_limit_per_account: int = 30
+    hourly_send_limit_per_account: int = 5
     min_delay_between_sends_sec: int = 60
     max_delay_between_sends_sec: int = 180
+
+    # ─── Répartition des comptes (poids en %, somme libre) ────────────────────
+    # Compte 1 reçoit ce % des envois, compte 2 reçoit (100 - gmail_weight_1) %
+    gmail_weight_1: int = 50
+
+    # ─── Protection anti-spam entreprise ──────────────────────────────────────
+    company_weekly_send_limit: int = 4
 
     @field_validator("max_delay_between_sends_sec")
     @classmethod

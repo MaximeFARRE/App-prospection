@@ -12,17 +12,23 @@ _SETTINGS_PATH = _PROJECT_ROOT / "data" / "settings.json"
 
 _LIMIT_KEYS = (
     "daily_send_limit_per_account",
+    "hourly_send_limit_per_account",
     "min_delay_between_sends_sec",
     "max_delay_between_sends_sec",
+    "company_weekly_send_limit",
+    "gmail_weight_1",
 )
 
 
 def get_settings() -> dict[str, Any]:
     payload = _load_json()
     defaults = {
-        "daily_send_limit_per_account": settings.daily_send_limit_per_account,
-        "min_delay_between_sends_sec": settings.min_delay_between_sends_sec,
-        "max_delay_between_sends_sec": settings.max_delay_between_sends_sec,
+        "daily_send_limit_per_account":  settings.daily_send_limit_per_account,
+        "hourly_send_limit_per_account": settings.hourly_send_limit_per_account,
+        "min_delay_between_sends_sec":   settings.min_delay_between_sends_sec,
+        "max_delay_between_sends_sec":   settings.max_delay_between_sends_sec,
+        "company_weekly_send_limit":     settings.company_weekly_send_limit,
+        "gmail_weight_1":                settings.gmail_weight_1,
         "last_gmail_sync_at": None,
     }
     for key in _LIMIT_KEYS:
@@ -51,23 +57,30 @@ def save_settings(values: dict[str, Any]) -> None:
 
 def apply_runtime_overrides() -> None:
     cfg = get_settings()
-    daily = max(1, int(cfg["daily_send_limit_per_account"]))
+    daily   = max(1, int(cfg["daily_send_limit_per_account"]))
+    hourly  = max(1, int(cfg["hourly_send_limit_per_account"]))
     minimum = max(1, int(cfg["min_delay_between_sends_sec"]))
     maximum = int(cfg["max_delay_between_sends_sec"])
     if maximum <= minimum:
         maximum = minimum + 1
+    company_weekly = max(1, int(cfg["company_weekly_send_limit"]))
+    weight_1       = max(1, min(99, int(cfg["gmail_weight_1"])))
 
-    settings.daily_send_limit_per_account = daily
-    settings.min_delay_between_sends_sec = minimum
-    settings.max_delay_between_sends_sec = maximum
+    settings.daily_send_limit_per_account  = daily
+    settings.hourly_send_limit_per_account = hourly
+    settings.min_delay_between_sends_sec   = minimum
+    settings.max_delay_between_sends_sec   = maximum
+    settings.company_weekly_send_limit     = company_weekly
+    settings.gmail_weight_1               = weight_1
 
-    save_settings(
-        {
-            "daily_send_limit_per_account": daily,
-            "min_delay_between_sends_sec": minimum,
-            "max_delay_between_sends_sec": maximum,
-        }
-    )
+    save_settings({
+        "daily_send_limit_per_account":  daily,
+        "hourly_send_limit_per_account": hourly,
+        "min_delay_between_sends_sec":   minimum,
+        "max_delay_between_sends_sec":   maximum,
+        "company_weekly_send_limit":     company_weekly,
+        "gmail_weight_1":                weight_1,
+    })
 
 
 def _load_json() -> dict[str, Any]:

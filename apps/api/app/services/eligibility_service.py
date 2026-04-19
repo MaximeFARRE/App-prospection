@@ -14,6 +14,7 @@ from app.utils.email_normalization import is_valid_email
 
 
 FOLLOWUP_WAIT = timedelta(days=7)
+SEND_TYPES = ("intro", "followup_1", "followup_2")
 
 
 @dataclass(slots=True)
@@ -38,6 +39,9 @@ def check_eligibility(contact: Contact, db: Session, campaign_name: str) -> Elig
 
     if _has_reply(contact.id, db):
         return _deny(contact.id, "replied")
+
+    if _company_weekly_limit_reached(contact, db):
+        return _deny(contact.id, "company_weekly_limit")
 
     campaign_state = _get_campaign_state(contact.id, campaign_name, db)
     if campaign_state is None and _has_prior_sent_message(contact.id, db):
@@ -96,6 +100,28 @@ def _get_campaign_state(contact_id: int, campaign_name: str, db: Session) -> Cam
         )
         .first()
     )
+
+
+def _company_weekly_limit_reached(contact: Contact, db: Session) -> bool:
+    """Vrai si l'entreprise du contact a déjà reçu trop de mails cette semaine."""
+    limit = int(settings.company_weekly_send_limit)
+    if limit <= 0:
+        return False
+    company_id = getattr(contact, "company_id", None)
+    if not company_id:
+        return False
+    week_start = datetime.utcnow() - timedelta(days=7)
+    count = (
+        db.query(Message.id)
+        .join(Contact, Contact.id == Message.contact_id)
+        .filter(
+            Contact.company_id == company_id,
+            Message.sent_at >= week_start,
+            Message.message_type.in_(SEND_TYPES),
+        )
+        .count()
+    )
+    return count >= limit
 
 
 def _has_prior_sent_message(contact_id: int, db: Session) -> bool:

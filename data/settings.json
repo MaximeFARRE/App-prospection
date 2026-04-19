@@ -1,6 +1,9 @@
 {
   "daily_send_limit_per_account": 30,
   "min_delay_between_sends_sec": 60,
-  "max_delay_between_sends_sec": 301,
-  "last_gmail_sync_at": "2026-04-19T09:35:21"
+  "max_delay_between_sends_sec": 300,
+  "last_gmail_sync_at": "2026-04-19T09:35:21",
+  "hourly_send_limit_per_account": 5,
+  "company_weekly_send_limit": 4,
+  "gmail_weight_1": 70
 }

@@ -46,13 +46,38 @@ def detect_language(contact: Contact) -> str:
     return "fr" if country in _FRANCE_COUNTRY_NAMES else "en"
 
 
-def pick_ab_variant(contact_id: int) -> str:
-    """Assigne le variant A/B de façon déterministe et équilibrée.
+def list_variants(step: str, language: str) -> list[str]:
+    """Retourne la liste triée des variants disponibles pour un step et une langue.
 
-    Contacts pairs  → 'a'
-    Contacts impairs → 'b'
+    Exemple : pour step='intro' langue='fr' et les fichiers intro_fr_a.md, intro_fr_b.md
+    → ['a', 'b']
+
+    Supporte autant de variants que souhaité (a, b, c, d…).
     """
-    return "a" if contact_id % 2 == 0 else "b"
+    _validate_step(step)
+    _validate_language(language)
+    files = sorted(_TEMPLATES_DIR.glob(f"{step}_{language}_*.md"))
+    variants = []
+    for f in files:
+        parts = f.stem.split("_")
+        if len(parts) >= 3:
+            variants.append(parts[-1])
+    return variants
+
+
+def pick_variant_for_position(step: str, language: str, position: int) -> str:
+    """Retourne le variant à utiliser pour une position donnée (round-robin).
+
+    Position 0 → premier variant, position 1 → deuxième variant, etc.
+    Reprend depuis le début quand tous les variants ont été utilisés.
+    """
+    variants = list_variants(step, language)
+    if not variants:
+        raise ValueError(
+            f"Aucun template trouvé pour step={step!r} langue={language!r}. "
+            f"Vérifiez que les fichiers {step}_{language}_*.md existent dans {_TEMPLATES_DIR}"
+        )
+    return variants[position % len(variants)]
 
 
 def load_template(step: str, language: str, ab_variant: str) -> tuple[str, str]:
@@ -100,10 +125,18 @@ def render_for_contact(
     step: str,
     contact: Contact,
     account: GmailAccount,
+    position: int = 0,
 ) -> RenderResult:
-    """Détecte la langue et le variant, charge le bon template et rend l'email."""
+    """Détecte la langue, sélectionne le variant par round-robin et rend l'email.
+
+    Args:
+        position: position absolue dans la séquence d'envoi pour ce (step, langue).
+                  0 → premier template, 1 → deuxième, etc.
+                  Doit être calculé par l'appelant pour assurer la continuité
+                  même après reprise d'une campagne interrompue.
+    """
     language   = detect_language(contact)
-    ab_variant = pick_ab_variant(contact.id)
+    ab_variant = pick_variant_for_position(step, language, position)
 
     template_subject, template_body = load_template(step, language, ab_variant)
     subject, body = render(template_subject, template_body, contact, account, language)

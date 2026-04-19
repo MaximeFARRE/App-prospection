@@ -77,8 +77,11 @@ class SettingsView(QWidget):
 
         self._send_limits_section = SendLimitsSection(self)
         self._send_limits_section.daily_limit_spin.valueChanged.connect(self._on_send_limits_changed)
+        self._send_limits_section.hourly_limit_spin.valueChanged.connect(self._on_send_limits_changed)
         self._send_limits_section.min_delay_spin.valueChanged.connect(self._on_send_limits_changed)
         self._send_limits_section.max_delay_spin.valueChanged.connect(self._on_send_limits_changed)
+        self._send_limits_section.company_weekly_limit_spin.valueChanged.connect(self._on_send_limits_changed)
+        self._send_limits_section.weight_1_spin.valueChanged.connect(self._on_send_limits_changed)
         content.addWidget(self._send_limits_section)
         content.addStretch(1)
 
@@ -91,9 +94,12 @@ class SettingsView(QWidget):
 
         self._loading_limits = True
         limits.daily_limit_spin.setValue(int(persisted["daily_send_limit_per_account"]))
+        limits.hourly_limit_spin.setValue(int(persisted["hourly_send_limit_per_account"]))
         limits.min_delay_spin.setValue(int(persisted["min_delay_between_sends_sec"]))
         limits.max_delay_spin.setValue(int(persisted["max_delay_between_sends_sec"]))
         limits.max_delay_spin.setMinimum(limits.min_delay_spin.value() + 1)
+        limits.company_weekly_limit_spin.setValue(int(persisted["company_weekly_send_limit"]))
+        limits.weight_1_spin.setValue(int(persisted["gmail_weight_1"]))
         self._loading_limits = False
 
         self._refresh_last_sync_label(persisted.get("last_gmail_sync_at"))
@@ -267,14 +273,18 @@ class SettingsView(QWidget):
         if limits.max_delay_spin.value() <= minimum:
             limits.max_delay_spin.setValue(minimum + 1)
 
-        settings.daily_send_limit_per_account = limits.daily_limit_spin.value()
-        settings.min_delay_between_sends_sec = limits.min_delay_spin.value()
-        settings.max_delay_between_sends_sec = limits.max_delay_spin.value()
+        settings.daily_send_limit_per_account  = limits.daily_limit_spin.value()
+        settings.hourly_send_limit_per_account = limits.hourly_limit_spin.value()
+        settings.min_delay_between_sends_sec   = limits.min_delay_spin.value()
+        settings.max_delay_between_sends_sec   = limits.max_delay_spin.value()
+        settings.company_weekly_send_limit     = limits.company_weekly_limit_spin.value()
+        settings.gmail_weight_1               = limits.weight_1_spin.value()
 
-        save_settings(
-            {
-                "daily_send_limit_per_account": settings.daily_send_limit_per_account,
-                "min_delay_between_sends_sec": settings.min_delay_between_sends_sec,
-                "max_delay_between_sends_sec": settings.max_delay_between_sends_sec,
-            }
-        )
+        save_settings({
+            "daily_send_limit_per_account":  settings.daily_send_limit_per_account,
+            "hourly_send_limit_per_account": settings.hourly_send_limit_per_account,
+            "min_delay_between_sends_sec":   settings.min_delay_between_sends_sec,
+            "max_delay_between_sends_sec":   settings.max_delay_between_sends_sec,
+            "company_weekly_send_limit":     settings.company_weekly_send_limit,
+            "gmail_weight_1":                settings.gmail_weight_1,
+        })

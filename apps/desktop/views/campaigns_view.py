@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.contact import Contact
-from app.services.campaign_prepare_service import QueuedEmail, prepare_campaign
+from app.services.campaign_prepare_service import CampaignStats, QueuedEmail, prepare_campaign
 from app.services.eligibility_service import EligibilityResult
 from widgets.campaign_preview_dialog import CampaignPreviewDialog
 from workers.campaign_workers import CampaignSendWorker
@@ -87,6 +87,15 @@ class CampaignsView(QWidget):
         self._summary_label.setStyleSheet("color: #334155; font-size: 12px; font-weight: 600;")
         layout.addWidget(self._summary_label)
 
+        self._stats_label = QLabel("")
+        self._stats_label.setWordWrap(True)
+        self._stats_label.setStyleSheet(
+            "background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; "
+            "padding: 8px; font-size: 11px; color: #334155;"
+        )
+        self._stats_label.hide()
+        layout.addWidget(self._stats_label)
+
         send_row = QHBoxLayout()
         send_row.setSpacing(8)
 
@@ -129,9 +138,16 @@ class CampaignsView(QWidget):
     def _refresh_template_status(self) -> None:
         parts: list[str] = []
         for step in _TEMPLATE_STEPS:
-            marker = "✓" if (_TEMPLATES_DIR / f"{step}.md").exists() else "✗"
-            parts.append(f"{step}.md {marker}")
-        self._templates_status_label.setText("Templates : " + " / ".join(parts))
+            fr_count = len(list(_TEMPLATES_DIR.glob(f"{step}_fr_*.md")))
+            en_count = len(list(_TEMPLATES_DIR.glob(f"{step}_en_*.md")))
+            if fr_count > 0 and en_count > 0:
+                marker = f"✓ FR:{fr_count} EN:{en_count}"
+            elif fr_count > 0 or en_count > 0:
+                marker = f"⚠ FR:{fr_count} EN:{en_count}"
+            else:
+                marker = "✗"
+            parts.append(f"{step}: {marker}")
+        self._templates_status_label.setText("Templates — " + " · ".join(parts))
 
     def _open_templates_folder(self) -> None:
         _TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
@@ -158,6 +174,7 @@ class CampaignsView(QWidget):
         self._populate_queue_table()
         self._populate_skipped_table()
         self._summary_label.setText(f"{len(self._queue)} à envoyer · {len(self._skipped_rows)} ignorés")
+        self._update_stats_label(result.stats)
         self._send_button.setEnabled(bool(self._queue))
         self._append_log("Simulation terminée.")
 
@@ -255,6 +272,46 @@ class CampaignsView(QWidget):
             return
         item = self._queue[row]
         CampaignPreviewDialog(item.subject, item.body, self).exec()
+
+    def _update_stats_label(self, stats: CampaignStats) -> None:
+        if stats.total == 0:
+            self._stats_label.hide()
+            return
+
+        # Répartition par étape
+        steps_str = " · ".join(
+            f"{step}: {count}"
+            for step, count in sorted(stats.step_counts.items())
+        )
+
+        # Répartition par compte
+        accounts_str = " · ".join(
+            f"{email.split('@')[0]}: {count}"
+            for email, count in sorted(stats.account_distribution.items())
+        )
+
+        # Raisons d'exclusion
+        reasons_str = ", ".join(
+            f"{reason} ({count})"
+            for reason, count in sorted(stats.skipped_reasons.items(), key=lambda x: -x[1])
+        ) or "—"
+
+        # Durée estimée
+        if stats.estimated_min_days == stats.estimated_max_days:
+            duration_str = f"~{stats.estimated_min_days} jour(s)"
+        else:
+            duration_str = f"{stats.estimated_min_days}–{stats.estimated_max_days} jours"
+
+        text = (
+            f"🇫🇷 Français : {stats.fr_count}  ·  🌍 Anglais : {stats.en_count}\n"
+            f"🏢 Entreprises ciblées : {stats.companies_count}\n"
+            f"📧 Étapes : {steps_str}\n"
+            f"📤 Comptes : {accounts_str}\n"
+            f"⏱ Durée estimée : {duration_str}\n"
+            f"⏭ Ignorés ({stats.skipped_total}) : {reasons_str}"
+        )
+        self._stats_label.setText(text)
+        self._stats_label.show()
 
     def _append_log(self, line: str) -> None:
         self._log_text.append(line)

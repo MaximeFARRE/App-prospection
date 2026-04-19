@@ -158,6 +158,10 @@ class SendLimitsSection(QGroupBox):
         self.daily_limit_spin.setRange(1, 1000)
         layout.addRow("Emails / jour / compte", self.daily_limit_spin)
 
+        self.hourly_limit_spin = QSpinBox()
+        self.hourly_limit_spin.setRange(1, 200)
+        layout.addRow("Emails / heure / compte", self.hourly_limit_spin)
+
         self.min_delay_spin = QSpinBox()
         self.min_delay_spin.setRange(1, 3600)
         layout.addRow("Délai min entre envois (sec)", self.min_delay_spin)
@@ -165,3 +169,12 @@ class SendLimitsSection(QGroupBox):
         self.max_delay_spin = QSpinBox()
         self.max_delay_spin.setRange(2, 7200)
         layout.addRow("Délai max entre envois (sec)", self.max_delay_spin)
+
+        self.company_weekly_limit_spin = QSpinBox()
+        self.company_weekly_limit_spin.setRange(1, 100)
+        layout.addRow("Max mails / entreprise / semaine", self.company_weekly_limit_spin)
+
+        self.weight_1_spin = QSpinBox()
+        self.weight_1_spin.setRange(1, 99)
+        self.weight_1_spin.setSuffix(" %")
+        layout.addRow("Poids compte 1 (compte 2 = reste)", self.weight_1_spin)

@@ -8,7 +8,11 @@ from app.core.config import GmailAccount
 from app.models.company import Company
 from app.models.contact import Contact
 from app.services import mail_render_service
-from app.services.mail_render_service import detect_language, pick_ab_variant
+from app.services.mail_render_service import (
+    detect_language,
+    list_variants,
+    pick_variant_for_position,
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,29 +63,44 @@ def test_no_country_defaults_to_english() -> None:
     assert detect_language(_make_contact(country=""))   == "en"
 
 
-# ── Tests : pick_ab_variant ───────────────────────────────────────────────────
+# ── Tests : rotation round-robin ─────────────────────────────────────────────
 
-def test_even_id_gets_variant_a() -> None:
-    assert pick_ab_variant(2)  == "a"
-    assert pick_ab_variant(100) == "a"
-    assert pick_ab_variant(0)  == "a"
-
-
-def test_odd_id_gets_variant_b() -> None:
-    assert pick_ab_variant(1)  == "b"
-    assert pick_ab_variant(99) == "b"
+def test_list_variants_returns_sorted_variants() -> None:
+    variants = list_variants("intro", "fr")
+    assert variants == sorted(variants)
+    assert len(variants) >= 2  # au moins a et b existent
 
 
-def test_variant_distribution_is_balanced() -> None:
-    variants = [pick_ab_variant(i) for i in range(1, 101)]
-    assert variants.count("a") == 50
-    assert variants.count("b") == 50
+def test_list_variants_en() -> None:
+    variants = list_variants("intro", "en")
+    assert "a" in variants
+    assert "b" in variants
 
 
-def test_variant_is_deterministic() -> None:
-    """Le même contact_id doit toujours donner le même variant."""
-    assert pick_ab_variant(7) == pick_ab_variant(7)
-    assert pick_ab_variant(42) == pick_ab_variant(42)
+def test_pick_variant_rotates_through_all() -> None:
+    variants = list_variants("intro", "fr")
+    n = len(variants)
+    for i, expected in enumerate(variants):
+        assert pick_variant_for_position("intro", "fr", i) == expected
+    # Retour au début
+    assert pick_variant_for_position("intro", "fr", n) == variants[0]
+
+
+def test_pick_variant_distribution_is_balanced() -> None:
+    variants = list_variants("intro", "fr")
+    n = len(variants)
+    picks = [pick_variant_for_position("intro", "fr", i) for i in range(n * 10)]
+    for v in variants:
+        assert picks.count(v) == 10
+
+
+def test_pick_variant_raises_on_invalid_language() -> None:
+    with pytest.raises(ValueError):
+        pick_variant_for_position("intro", "de", 0)
+
+
+def test_pick_variant_is_deterministic() -> None:
+    assert pick_variant_for_position("intro", "fr", 5) == pick_variant_for_position("intro", "fr", 5)
 
 
 # ── Tests : règle langue → template ──────────────────────────────────────────

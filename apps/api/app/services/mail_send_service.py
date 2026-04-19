@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -57,7 +57,8 @@ def send_campaign(
 
     progress = SendProgress(total=len(queue))
     service_by_email: dict[str, object] = {}
-    sent_today_cache = _build_sent_today_cache(db, accounts)
+    sent_today_cache       = _build_sent_today_cache(db, accounts)
+    sent_this_hour_cache   = _build_sent_this_hour_cache(db, accounts)
 
     for item in queue:
         if _should_stop(stop_event):
@@ -65,9 +66,14 @@ def send_campaign(
             break
 
         progress.current_contact = _format_contact_label(item)
-        account = _pick_available_account(item.account, accounts, db, sent_today_cache)
+        account = _pick_available_account(
+            item.account, accounts, db, sent_today_cache, sent_this_hour_cache
+        )
         if account is None:
-            logger.warning("Limite journalière atteinte sur tous les comptes, arrêt de la campagne.")
+            logger.warning(
+                "Limite journalière ou horaire atteinte sur tous les comptes, "
+                "arrêt de la campagne. Relancez dans quelques minutes."
+            )
             break
 
         try:
@@ -79,7 +85,8 @@ def send_campaign(
             db.commit()
 
             progress.sent += 1
-            sent_today_cache[account.email] = sent_today_cache.get(account.email, 0) + 1
+            sent_today_cache[account.email]     = sent_today_cache.get(account.email, 0) + 1
+            sent_this_hour_cache[account.email] = sent_this_hour_cache.get(account.email, 0) + 1
             _publish_progress(progress_callback, progress)
 
             if _should_stop(stop_event):
@@ -114,24 +121,58 @@ def _build_sent_today_cache(db: Session, accounts: list[GmailAccount]) -> dict[s
     return {account.email: _count_sent_today(account.email, db) for account in accounts}
 
 
+def _count_sent_this_hour(account_email: str, db: Session) -> int:
+    """Fenêtre glissante de 60 minutes (pas l'heure civile)."""
+    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    return int(
+        db.query(Message.id)
+        .filter(
+            and_(
+                Message.from_email == account_email,
+                Message.sent_at >= one_hour_ago,
+                Message.message_type.in_(SEND_TYPES),
+            )
+        )
+        .count()
+    )
+
+
+def _build_sent_this_hour_cache(db: Session, accounts: list[GmailAccount]) -> dict[str, int]:
+    return {account.email: _count_sent_this_hour(account.email, db) for account in accounts}
+
+
 def _pick_available_account(
     preferred_account: GmailAccount,
     accounts: list[GmailAccount],
     db: Session,
     sent_today_cache: dict[str, int],
+    sent_this_hour_cache: dict[str, int],
 ) -> GmailAccount | None:
-    daily_limit = max(1, int(settings.daily_send_limit_per_account))
+    daily_limit  = max(1, int(settings.daily_send_limit_per_account))
+    hourly_limit = max(1, int(settings.hourly_send_limit_per_account))
     ordered_accounts = [preferred_account] + [a for a in accounts if a.email != preferred_account.email]
 
     for account in ordered_accounts:
         if not account.email:
             continue
-        current_count = sent_today_cache.get(account.email)
-        if current_count is None:
-            current_count = _count_sent_today(account.email, db)
-            sent_today_cache[account.email] = current_count
-        if current_count < daily_limit:
-            return account
+
+        # Limite journalière
+        daily_count = sent_today_cache.get(account.email)
+        if daily_count is None:
+            daily_count = _count_sent_today(account.email, db)
+            sent_today_cache[account.email] = daily_count
+        if daily_count >= daily_limit:
+            continue
+
+        # Limite horaire (fenêtre glissante 60 min)
+        hourly_count = sent_this_hour_cache.get(account.email)
+        if hourly_count is None:
+            hourly_count = _count_sent_this_hour(account.email, db)
+            sent_this_hour_cache[account.email] = hourly_count
+        if hourly_count >= hourly_limit:
+            continue
+
+        return account
     return None
 
 
