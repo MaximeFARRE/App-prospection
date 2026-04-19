@@ -20,6 +20,7 @@ class ContactDetailDialog(QDialog):
         fields = [
             ("Prénom", contact.first_name),
             ("Nom", contact.last_name),
+            ("Sexe", contact.sex),
             ("Entreprise", company_name),
             ("Poste", contact.job_title),
             ("Email", contact.email),
@@ -49,4 +50,3 @@ def _display(value: Any) -> str:
         return "-"
     text = str(value).strip()
     return text if text else "-"
-

@@ -8,6 +8,7 @@ from app.schemas.company import CompanyRead
 class ContactBase(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
+    sex: str | None = None
     email: str | None = None
     job_title: str | None = None
     country: str | None = None
@@ -28,6 +29,7 @@ class ContactUpdate(BaseModel):
     """Mise à jour partielle — tous les champs sont optionnels."""
     first_name: str | None = None
     last_name: str | None = None
+    sex: str | None = None
     job_title: str | None = None
     country: str | None = None
     phone: str | None = None

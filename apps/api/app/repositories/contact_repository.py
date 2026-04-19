@@ -8,6 +8,7 @@ from app.models.company import Company
 from app.models.contact import Contact
 from app.models.message import Message
 from app.models.reply import Reply
+from app.utils.sex_normalization import normalize_sex
 
 CONTACT_PAGE_SIZE_DEFAULT = 50
 CONTACT_PAGE_SIZE_MAX = 200
@@ -97,6 +98,14 @@ def set_blocked(db: Session, contact_id: int, is_blocked: bool = True) -> Contac
     if contact is None:
         return None
     contact.is_blocked = bool(is_blocked)
+    return contact
+
+
+def set_sex(db: Session, contact_id: int, sex: str | None) -> Contact | None:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if contact is None:
+        return None
+    contact.sex = normalize_sex(sex)
     return contact
 
 

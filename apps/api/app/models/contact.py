@@ -14,6 +14,7 @@ class Contact(Base):
     # ── Identité ───────────────────────────────────────────────────────────────
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
+    sex: Mapped[str | None] = mapped_column(String(10))
 
     # ── Email (clé de déduplication) ───────────────────────────────────────────
     # Rempli depuis contact_professions_email (ou contact_emails en fallback)

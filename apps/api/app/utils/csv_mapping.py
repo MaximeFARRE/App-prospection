@@ -12,13 +12,18 @@ Colonnes identifiées dans les fichiers sources :
     prospect_company_name, prospect_company_website, prospect_company_linkedin,
     contact_professional_email_status, contact_emails, contact_mobile_phone,
     contact_phone_numbers, created_at, prospect_linkedin_url_array,
-    business_id, prospect_id
+    business_id, prospect_id, sexe/sex/gender (optionnel)
 """
 
 # ── Contact : colonne CSV → champ modèle ─────────────────────────────────────
 CONTACT_COLUMN_MAP: dict[str, str] = {
     "prospect_first_name":              "first_name",
     "prospect_last_name":               "last_name",
+    "sexe":                             "sex",
+    "sex":                              "sex",
+    "gender":                           "sex",
+    "prospect_gender":                  "sex",
+    "contact_gender":                   "sex",
     "prospect_job_title":               "job_title",
     "prospect_job_level_main":          "job_level",
     "prospect_linkedin":                "linkedin_url",

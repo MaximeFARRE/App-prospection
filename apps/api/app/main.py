@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.base import Base
+from app.db.schema_compat import ensure_schema_compatibility
 from app.db.session import engine
 from app.api import (
     routes_contacts,
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Ce create_all sert uniquement de filet de sécurité en dev.
     """
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility(engine)
     yield
 
 

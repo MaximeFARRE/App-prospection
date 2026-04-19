@@ -28,6 +28,9 @@ passlib[bcrypt]>=1.7.4
 # HTTP client (tests, appels internes)
 httpx>=0.28.0
 
+# Détection du sexe par prénom
+gender-guesser>=0.4.0
+
 # Tests
 pytest>=8.3.0
 pytest-asyncio>=0.24.0

@@ -23,6 +23,7 @@ def test_import_csv_creates_contact_and_company(
             "prospect_company_name": "Acme",
             "prospect_job_title": "Analyst",
             "prospect_country_name": "France",
+            "sexe": "F",
             "business_id": "biz-1",
             "prospect_id": "prospect-1",
         }
@@ -43,6 +44,7 @@ def test_import_csv_creates_contact_and_company(
 
     assert len(contacts) == 1
     assert contacts[0].email_normalized == "alice@example.com"
+    assert contacts[0].sex == "femme"
     assert len(companies) == 1
     assert companies[0].name == "Acme"
     assert len(jobs) == 1
@@ -80,3 +82,26 @@ def test_import_csv_skips_duplicate_email(
     assert result.duplicate_count == 1
     assert result.error_count == 0
     assert db.query(Contact).count() == 1
+
+
+def test_import_csv_normalizes_gender_alias_column(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        {
+            "prospect_first_name": "Bob",
+            "prospect_last_name": "Durand",
+            "contact_professions_email": "bob@example.com",
+            "gender": "male",
+            "prospect_id": "prospect-42",
+        }
+    ]
+    monkeypatch.setattr(csv_import_service, "_read_csv", lambda _path: rows)
+
+    result = csv_import_service.import_csv(Path("prospects_gender_alias.csv"), db)
+
+    assert result.created_contacts == 1
+    saved = db.query(Contact).filter(Contact.email_normalized == "bob@example.com").first()
+    assert saved is not None
+    assert saved.sex == "homme"

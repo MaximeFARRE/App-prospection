@@ -70,11 +70,16 @@ def _build_variables(contact: Contact, account: GmailAccount) -> dict[str, str]:
     last_name = _as_text(getattr(contact, "last_name", None))
     full_name = " ".join(part for part in [first_name, last_name] if part).strip()
     company_name = _resolve_company_name(contact)
+    sex = _as_text(getattr(contact, "sex", None)).lower()
+    civilite = _resolve_civility(sex)
 
     return {
         "first_name": first_name,
         "last_name": last_name,
         "full_name": full_name,
+        "sex": sex,
+        "sexe": sex,
+        "civilite": civilite,
         "company": company_name,
         "job_title": _as_text(getattr(contact, "job_title", None)),
         "sender_name": _load_sender_name(),
@@ -87,6 +92,14 @@ def _resolve_company_name(contact: Contact) -> str:
     if company is None:
         return ""
     return _as_text(getattr(company, "name", None))
+
+
+def _resolve_civility(sex: str) -> str:
+    if sex == "homme":
+        return "Monsieur"
+    if sex == "femme":
+        return "Madame"
+    return ""
 
 
 def _replace_variables(template: str, variables: dict[str, str]) -> str:

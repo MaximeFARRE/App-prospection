@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.import_job import ImportJob
-from app.utils.csv_mapping import CONTACT_COLUMN_MAP, split_full_name
+from app.utils.csv_mapping import split_full_name
 from app.utils.email_normalization import normalize_email
+from app.utils.sex_normalization import normalize_sex
 
 
 # ── Résultat retourné au appelant ─────────────────────────────────────────────
@@ -160,6 +161,7 @@ def _process_row(
     contact = Contact(
         first_name=first_name,
         last_name=last_name,
+        sex=_extract_sex(row),
         email=email_raw,
         email_normalized=email_norm,
         job_title=_clean(row.get("prospect_job_title")),
@@ -218,6 +220,14 @@ def _clean(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped if stripped else None
+
+
+def _extract_sex(row: dict[str, str]) -> str | None:
+    for column in ("sexe", "sex", "gender", "prospect_gender", "contact_gender"):
+        normalized = normalize_sex(_clean(row.get(column)))
+        if normalized is not None:
+            return normalized
+    return None
 
 
 def _update_job(job: ImportJob, result: ImportResult, status: str) -> None:

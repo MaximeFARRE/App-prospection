@@ -24,6 +24,7 @@ from widgets.contact_detail_dialog import ContactDetailDialog
 
 
 PAGE_SIZE = 100
+SEX_VALUES = ("homme", "femme")
 
 
 class _ContactsPageLoader(QThread):
@@ -55,6 +56,7 @@ class ContactsView(QWidget):
         self._rows: list[dict[str, Any]] = []
         self._request_id = 0
         self._active_loader: _ContactsPageLoader | None = None
+        self._is_rendering = False
 
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
@@ -95,9 +97,9 @@ class ContactsView(QWidget):
 
         root.addLayout(filters_row)
 
-        self._table = QTableWidget(0, 8)
+        self._table = QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
-            ["Prénom", "Nom", "Entreprise", "Poste", "Email", "Pays", "Statut email", "Bloqué"]
+            ["Prénom", "Nom", "Sexe", "Entreprise", "Poste", "Email", "Pays", "Statut email", "Bloqué"]
         )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -130,7 +132,7 @@ class ContactsView(QWidget):
         self._blocked_filter.currentIndexChanged.connect(self._schedule_reload)
         self._prev_button.clicked.connect(self._go_prev_page)
         self._next_button.clicked.connect(self._go_next_page)
-        self._table.cellClicked.connect(self._open_contact_detail)
+        self._table.cellDoubleClicked.connect(self._open_contact_detail)
 
     def _schedule_reload(self, *_args: Any) -> None:
         self._debounce_timer.start()
@@ -192,27 +194,40 @@ class ContactsView(QWidget):
         self._update_pagination_controls()
 
     def _render_rows(self) -> None:
+        self._is_rendering = True
         self._table.setRowCount(len(self._rows))
 
         for row_index, row in enumerate(self._rows):
-            values = [
-                row["first_name"],
-                row["last_name"],
-                row["company_name"],
-                row["job_title"],
-                row["email"],
-                row["country"],
-                row["email_status"],
-                "Oui" if row["is_blocked"] else "Non",
+            cells = [
+                (0, row["first_name"]),
+                (1, row["last_name"]),
+                (3, row["company_name"]),
+                (4, row["job_title"]),
+                (5, row["email"]),
+                (6, row["country"]),
+                (7, row["email_status"]),
+                (8, "Oui" if row["is_blocked"] else "Non"),
             ]
 
-            for col_index, value in enumerate(values):
+            for col_index, value in cells:
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, row["id"])
-                if col_index == 7:
+                if col_index == 8:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(row_index, col_index, item)
 
+            sex_combo = QComboBox()
+            sex_combo.addItem("-", None)
+            for sex in SEX_VALUES:
+                sex_combo.addItem(sex, sex)
+            current_sex = row["sex"] if row["sex"] in SEX_VALUES else None
+            sex_combo.setCurrentIndex(0 if current_sex is None else SEX_VALUES.index(current_sex) + 1)
+            sex_combo.currentIndexChanged.connect(
+                lambda _index, contact_id=row["id"], combo=sex_combo: self._on_sex_changed(contact_id, combo)
+            )
+            self._table.setCellWidget(row_index, 2, sex_combo)
+
+        self._is_rendering = False
         self._status_label.setText(f"{self._total_contacts} contact(s)")
 
     def _update_pagination_controls(self) -> None:
@@ -249,6 +264,54 @@ class ContactsView(QWidget):
 
         return filters
 
+    def _on_sex_changed(self, contact_id: int, combo: QComboBox) -> None:
+        if self._is_rendering:
+            return
+
+        row_index = self._row_index_for_contact(contact_id)
+        if row_index < 0:
+            return
+
+        sex_data = combo.currentData()
+        next_value = str(sex_data).strip().lower() if sex_data else None
+        current_value = self._rows[row_index]["sex"] or None
+        if current_value == next_value:
+            return
+
+        if not self._persist_sex(contact_id, next_value):
+            combo.blockSignals(True)
+            if current_value is None:
+                combo.setCurrentIndex(0)
+            else:
+                combo.setCurrentIndex(SEX_VALUES.index(current_value) + 1)
+            combo.blockSignals(False)
+            return
+
+        self._rows[row_index]["sex"] = next_value or ""
+
+    def _persist_sex(self, contact_id: int, sex: str | None) -> bool:
+        db = SessionLocal()
+        try:
+            contact = contact_repository.set_sex(db, contact_id=contact_id, sex=sex)
+            if contact is None:
+                QMessageBox.warning(self, "Contact", "Contact introuvable.")
+                return False
+            db.commit()
+            self._status_label.setText("Sexe mis à jour.")
+            return True
+        except Exception as exc:
+            db.rollback()
+            QMessageBox.warning(self, "Contact", f"Impossible de mettre à jour le sexe:\n{exc}")
+            return False
+        finally:
+            db.close()
+
+    def _row_index_for_contact(self, contact_id: int) -> int:
+        for index, row in enumerate(self._rows):
+            if row["id"] == contact_id:
+                return index
+        return -1
+
     def _open_contact_detail(self, row_index: int, _column: int) -> None:
         if row_index < 0 or row_index >= len(self._rows):
             return
@@ -274,6 +337,7 @@ def _contact_to_row(contact: Any) -> dict[str, Any]:
         "id": contact.id,
         "first_name": _to_text(contact.first_name),
         "last_name": _to_text(contact.last_name),
+        "sex": _to_text(getattr(contact, "sex", None), fallback=""),
         "company_name": _to_text(company.name if company else None),
         "job_title": _to_text(contact.job_title),
         "email": _to_text(contact.email),
@@ -283,8 +347,8 @@ def _contact_to_row(contact: Any) -> dict[str, Any]:
     }
 
 
-def _to_text(value: Any) -> str:
+def _to_text(value: Any, fallback: str = "-") -> str:
     if value is None:
-        return "-"
+        return fallback
     text = str(value).strip()
-    return text if text else "-"
+    return text if text else fallback
