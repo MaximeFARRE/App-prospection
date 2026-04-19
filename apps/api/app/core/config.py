@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     gmail_refresh_token_2: str = ""
     gmail_email_2: str = "maxime@maxime-farre.xyz"
 
+    # ─── Pièce jointe CV ──────────────────────────────────────────────────────
+    cv_path: str = str(_PROJECT_ROOT / "data" / "Cv_maxime_farre.pdf")
+
     # ─── Limites d'envoi ───────────────────────────────────────────────────────
     daily_send_limit_per_account: int = 30
     min_delay_between_sends_sec: int = 60

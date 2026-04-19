@@ -27,6 +27,12 @@ class Message(Base):
     message_type: Mapped[str] = mapped_column(String(20))
     # valeurs possibles : "intro", "followup_1", "followup_2"
 
+    # A/B testing
+    language: Mapped[str | None] = mapped_column(String(5))
+    # valeurs : "fr", "en"
+    ab_variant: Mapped[str | None] = mapped_column(String(5))
+    # valeurs : "a", "b"
+
     # Résultat
     gmail_message_id: Mapped[str | None] = mapped_column(String(255))
     # bounced et error_message pour la gestion des erreurs futures

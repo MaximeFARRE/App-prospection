@@ -8,8 +8,10 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Callable
 
 from google.auth.transport.requests import Request
@@ -167,13 +169,33 @@ def _send_message_with_retry(service, item: QueuedEmail, account: GmailAccount) 
 
 
 def _build_raw_message(item: QueuedEmail, account: GmailAccount) -> dict[str, str]:
-    mime_message = MIMEMultipart("alternative")
+    # Conteneur principal "mixed" pour pouvoir ajouter des pièces jointes
+    mime_message = MIMEMultipart("mixed")
     mime_message["To"] = item.contact.email or ""
     mime_message["From"] = account.email
     mime_message["Subject"] = item.subject
+
+    # Corps texte + HTML dans une partie "alternative" imbriquée
+    body_part = MIMEMultipart("alternative")
     plain_body = _html_to_text(item.body)
-    mime_message.attach(MIMEText(plain_body, "plain", "utf-8"))
-    mime_message.attach(MIMEText(item.body, "html", "utf-8"))
+    body_part.attach(MIMEText(plain_body, "plain", "utf-8"))
+    body_part.attach(MIMEText(item.body, "html", "utf-8"))
+    mime_message.attach(body_part)
+
+    # Pièce jointe CV (si le fichier existe)
+    cv_path = Path(settings.cv_path)
+    if cv_path.is_file():
+        cv_data = cv_path.read_bytes()
+        attachment = MIMEApplication(cv_data, _subtype="pdf")
+        attachment.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=cv_path.name,
+        )
+        mime_message.attach(attachment)
+    else:
+        logger.warning("CV introuvable, envoi sans pièce jointe : %s", cv_path)
+
     encoded = base64.urlsafe_b64encode(mime_message.as_bytes()).decode("utf-8")
     return {"raw": encoded}
 
@@ -200,6 +222,8 @@ def _record_sent_message(
             body=item.body,
             from_email=account.email,
             message_type=item.step,
+            language=item.language,
+            ab_variant=item.ab_variant,
             gmail_message_id=gmail_message_id,
             sent_at=sent_at,
         )

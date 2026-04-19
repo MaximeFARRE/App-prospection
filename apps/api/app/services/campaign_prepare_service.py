@@ -18,6 +18,8 @@ class QueuedEmail:
     step: str
     subject: str
     body: str
+    language: str    # "fr" ou "en"
+    ab_variant: str  # "a" ou "b"
 
 
 @dataclass(slots=True)
@@ -65,14 +67,16 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
             continue
 
         account = accounts[account_idx % len(accounts)]
-        subject, body = render_for_contact(eligibility.next_step, contact, account)
+        result = render_for_contact(eligibility.next_step, contact, account)
         queue.append(
             QueuedEmail(
                 contact=contact,
                 account=account,
                 step=eligibility.next_step,
-                subject=subject,
-                body=body,
+                subject=result.subject,
+                body=result.body,
+                language=result.language,
+                ab_variant=result.ab_variant,
             )
         )
         account_idx += 1
