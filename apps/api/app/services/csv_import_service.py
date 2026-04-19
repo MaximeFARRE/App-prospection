@@ -60,6 +60,8 @@ def import_csv(
     db.flush()
 
     result = ImportResult(job_id=job.id, filename=file_path.name)
+    seen_emails: set[str] = set()
+    seen_source_prospect_ids: set[str] = set()
 
     try:
         rows = _read_csv(file_path)
@@ -67,7 +69,14 @@ def import_csv(
 
         for i, row in enumerate(rows):
             try:
-                _process_row(row, db, source, result)
+                _process_row(
+                    row=row,
+                    db=db,
+                    source=source,
+                    result=result,
+                    seen_emails=seen_emails,
+                    seen_source_prospect_ids=seen_source_prospect_ids,
+                )
             except Exception as exc:
                 result.error_count += 1
                 result.errors.append(f"Ligne {i + 2} : {exc}")
@@ -113,12 +122,22 @@ def _process_row(
     db: Session,
     source: str,
     result: ImportResult,
+    seen_emails: set[str],
+    seen_source_prospect_ids: set[str],
 ) -> None:
     company_id = _get_or_create_company(row, db, result)
 
     email_raw = _clean(row.get("contact_professions_email"))
     email_norm = normalize_email(email_raw)
     source_prospect_id = _clean(row.get("prospect_id"))
+
+    if email_norm and email_norm in seen_emails:
+        result.duplicate_count += 1
+        return
+
+    if source_prospect_id and source_prospect_id in seen_source_prospect_ids:
+        result.duplicate_count += 1
+        return
 
     # Déduplication par email normalisé
     if email_norm and db.query(Contact).filter_by(email_normalized=email_norm).first():
@@ -157,6 +176,10 @@ def _process_row(
         source_business_id=_clean(row.get("business_id")),
     )
     db.add(contact)
+    if email_norm:
+        seen_emails.add(email_norm)
+    if source_prospect_id:
+        seen_source_prospect_ids.add(source_prospect_id)
     result.created_contacts += 1
 
 

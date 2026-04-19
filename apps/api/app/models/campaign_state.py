@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -14,6 +14,9 @@ class CampaignState(Base):
     """
 
     __tablename__ = "campaign_states"
+    __table_args__ = (
+        UniqueConstraint("contact_id", "campaign_name", name="uq_campaign_states_contact_campaign"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 

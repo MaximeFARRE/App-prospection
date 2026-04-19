@@ -92,6 +92,14 @@ def search(
     return _attach_company(rows)
 
 
+def set_blocked(db: Session, contact_id: int, is_blocked: bool = True) -> Contact | None:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if contact is None:
+        return None
+    contact.is_blocked = bool(is_blocked)
+    return contact
+
+
 def get_stats(db: Session) -> dict[str, Any]:
     """Retourne les compteurs globaux du dashboard."""
     contacts_total = int(db.query(func.count(Contact.id)).scalar() or 0)
