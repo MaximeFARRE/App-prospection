@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from pathlib import Path
 from typing import Callable
 
@@ -213,7 +214,8 @@ def _build_raw_message(item: QueuedEmail, account: GmailAccount) -> dict[str, st
     # Conteneur principal "mixed" pour pouvoir ajouter des pièces jointes
     mime_message = MIMEMultipart("mixed")
     mime_message["To"] = item.contact.email or ""
-    mime_message["From"] = account.email
+    sender_name = (settings.sender_name or "").strip()
+    mime_message["From"] = formataddr((sender_name, account.email)) if sender_name else account.email
     mime_message["Subject"] = item.subject
 
     # Corps texte + HTML dans une partie "alternative" imbriquée

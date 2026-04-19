@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.core.config import GmailAccount
+from app.core.config import GmailAccount, settings
 from app.models.contact import Contact
 
 
@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[4]
 _TEMPLATES_DIR = _PROJECT_ROOT / "data" / "templates"
 _SETTINGS_PATH = _PROJECT_ROOT / "data" / "settings.json"
-_ENV_PATH = _PROJECT_ROOT / ".env"
 
 _SUPPORTED_STEPS    = frozenset({"intro", "followup_1", "followup_2"})
 _SUPPORTED_LANGUAGES = frozenset({"fr", "en"})
@@ -240,19 +239,20 @@ def _replace_variables(template: str, variables: dict[str, str]) -> str:
 # ── Chargement du nom de l'expéditeur ─────────────────────────────────────────
 
 def _load_sender_name() -> str:
+    """Retourne SENDER_NAME : pydantic-settings (prioritaire) → settings.json → os.environ."""
+    # 1. Pydantic-settings lit SENDER_NAME depuis le .env automatiquement
+    from_config = _as_text(settings.sender_name)
+    if from_config:
+        return from_config
+
+    # 2. Surcharge éventuelle via settings.json (éditable depuis l'UI)
     settings_payload = _load_json_settings()
-    from_settings = _as_text(settings_payload.get("sender_name"))
-    if from_settings:
-        return from_settings
+    from_json = _as_text(settings_payload.get("sender_name"))
+    if from_json:
+        return from_json
 
-    from_env_file = _load_sender_name_from_env_file()
-    if from_env_file:
-        return from_env_file
-
-    from_env = _as_text(os.getenv("SENDER_NAME"))
-    if from_env:
-        return from_env
-    return ""
+    # 3. Fallback variable d'environnement brute
+    return _as_text(os.getenv("SENDER_NAME"))
 
 
 def _load_json_settings() -> dict[str, object]:
@@ -265,36 +265,32 @@ def _load_json_settings() -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _load_sender_name_from_env_file() -> str:
-    if not _ENV_PATH.exists():
-        return ""
-    try:
-        lines = _ENV_PATH.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return ""
-
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        if key.strip().upper() != "SENDER_NAME":
-            continue
-        return _as_text(value.strip().strip('"').strip("'"))
-    return ""
-
-
-# ── Conversion Markdown → HTML ────────────────────────────────────────────────
+# ── Conversion texte → HTML ───────────────────────────────────────────────────
 
 def _markdown_to_html(content: str) -> str:
+    """Convertit le contenu brut d'un template en HTML pour email.
+
+    Règles :
+    - Blocs séparés par une ligne vide  → balises <p>…</p>
+    - Sauts de ligne simples au sein d'un bloc → <br>
+
+    Aucune dépendance externe requise.
+    """
     if not content:
         return ""
-    try:
-        import markdown  # type: ignore
-        return markdown.markdown(content)
-    except Exception:
-        logger.debug("Conversion markdown indisponible, body conservé en texte brut.")
-        return content
+    # Normaliser les fins de ligne
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+    # Découper en paragraphes (une ou plusieurs lignes vides)
+    paragraphs = re.split(r"\n{2,}", content)
+    parts: list[str] = []
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        # Sauts de ligne simples → <br>
+        para = para.replace("\n", "<br>\n")
+        parts.append(f"<p>{para}</p>")
+    return "\n".join(parts)
 
 
 # ── Utilitaire ────────────────────────────────────────────────────────────────

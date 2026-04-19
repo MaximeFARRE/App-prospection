@@ -63,7 +63,7 @@ class SettingsView(QWidget):
         accounts_layout.setSpacing(10)
 
         self._account_cards: dict[int, AccountCard] = {}
-        for account_index in (1, 2):
+        for account_index in (1, 2, 3):
             card = AccountCard(account_index, self)
             card.test_requested.connect(self._test_account_connection)
             card.reconfigure_requested.connect(self._open_reconfigure_dialog)
@@ -82,6 +82,8 @@ class SettingsView(QWidget):
         self._send_limits_section.max_delay_spin.valueChanged.connect(self._on_send_limits_changed)
         self._send_limits_section.company_weekly_limit_spin.valueChanged.connect(self._on_send_limits_changed)
         self._send_limits_section.weight_1_spin.valueChanged.connect(self._on_send_limits_changed)
+        self._send_limits_section.weight_2_spin.valueChanged.connect(self._on_send_limits_changed)
+        self._send_limits_section.weight_3_spin.valueChanged.connect(self._on_send_limits_changed)
         content.addWidget(self._send_limits_section)
         content.addStretch(1)
 
@@ -100,6 +102,8 @@ class SettingsView(QWidget):
         limits.max_delay_spin.setMinimum(limits.min_delay_spin.value() + 1)
         limits.company_weekly_limit_spin.setValue(int(persisted["company_weekly_send_limit"]))
         limits.weight_1_spin.setValue(int(persisted["gmail_weight_1"]))
+        limits.weight_2_spin.setValue(int(persisted["gmail_weight_2"]))
+        limits.weight_3_spin.setValue(int(persisted["gmail_weight_3"]))
         self._loading_limits = False
 
         self._refresh_last_sync_label(persisted.get("last_gmail_sync_at"))
@@ -110,9 +114,7 @@ class SettingsView(QWidget):
             card.set_connection_ok(self._tested_accounts.get(account_index))
 
     def _get_account(self, account_index: int) -> GmailAccount:
-        if account_index == 1:
-            return settings.gmail_account_1
-        return settings.gmail_account_2
+        return settings.gmail_account(account_index)
 
     def _test_account_connection(self, account_index: int) -> None:
         account = self._get_account(account_index)
@@ -279,6 +281,8 @@ class SettingsView(QWidget):
         settings.max_delay_between_sends_sec   = limits.max_delay_spin.value()
         settings.company_weekly_send_limit     = limits.company_weekly_limit_spin.value()
         settings.gmail_weight_1               = limits.weight_1_spin.value()
+        settings.gmail_weight_2               = limits.weight_2_spin.value()
+        settings.gmail_weight_3               = limits.weight_3_spin.value()
 
         save_settings({
             "daily_send_limit_per_account":  settings.daily_send_limit_per_account,
@@ -287,4 +291,6 @@ class SettingsView(QWidget):
             "max_delay_between_sends_sec":   settings.max_delay_between_sends_sec,
             "company_weekly_send_limit":     settings.company_weekly_send_limit,
             "gmail_weight_1":                settings.gmail_weight_1,
+            "gmail_weight_2":                settings.gmail_weight_2,
+            "gmail_weight_3":                settings.gmail_weight_3,
         })

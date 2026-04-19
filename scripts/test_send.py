@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from pathlib import Path
 
 # ── Chemin vers apps/api ──────────────────────────────────────────────────────
@@ -80,7 +81,8 @@ def _build_service(account: GmailAccount):
 def _build_mime(to_email: str, from_email: str, subject: str, body_html: str) -> dict:
     msg = MIMEMultipart("mixed")
     msg["To"]      = to_email
-    msg["From"]    = from_email
+    sender_name    = (settings.sender_name or "").strip()
+    msg["From"]    = formataddr((sender_name, from_email)) if sender_name else from_email
     msg["Subject"] = subject
 
     body_part = MIMEMultipart("alternative")
@@ -108,33 +110,39 @@ def run(dry_run: bool) -> None:
     print("\n  ── Test d'envoi Gmail ─────────────────────────────")
     print(f"  Mode : {'DRY RUN (aucun mail envoyé)' if dry_run else 'ENVOI RÉEL'}\n")
 
-    # Vérification du compte Gmail
+    # Vérification des comptes Gmail
     accounts = settings.configured_gmail_accounts
     if not accounts:
         print("  ✗ ERREUR : Aucun compte Gmail configuré dans le .env")
         print("    Vérifiez GMAIL_CLIENT_ID_1, GMAIL_CLIENT_SECRET_1, GMAIL_REFRESH_TOKEN_1")
         sys.exit(1)
 
-    account = accounts[0]
-    print(f"  Compte expéditeur : {account.email}")
-    print(f"  Nombre de comptes configurés : {len(accounts)}\n")
+    print(f"  Comptes configurés ({len(accounts)}) :")
+    for a in accounts:
+        print(f"    • {a.email}")
+    print()
 
-    # Connexion Gmail (seulement si envoi réel)
-    service = None
+    # Connexion à tous les comptes (seulement si envoi réel)
+    services: dict[str, object] = {}
     if not dry_run:
-        print("  Connexion à l'API Gmail...", end=" ", flush=True)
-        try:
-            service = _build_service(account)
-            print("✓\n")
-        except Exception as exc:
-            print(f"\n  ✗ ERREUR de connexion : {exc}")
-            sys.exit(1)
+        for account in accounts:
+            print(f"  Connexion {account.email}...", end=" ", flush=True)
+            try:
+                services[account.email] = _build_service(account)
+                print("✓")
+            except Exception as exc:
+                print(f"\n  ✗ ERREUR de connexion : {exc}")
+                sys.exit(1)
+        print()
 
-    # Envoi des mails de test
-    results: list[tuple[str, bool, str]] = []
+    # Envoi des mails de test — répartition round-robin entre les comptes
+    results: list[tuple[str, str, bool, str]] = []  # (email, compte, succès, détail)
 
     for i, (first_name, last_name, email, country, sex, company_name, cid) in enumerate(TEST_TARGETS):
+        # Sélection du compte par round-robin
+        account = accounts[i % len(accounts)]
         print(f"  [{i+1}/{len(TEST_TARGETS)}] {email}")
+        print(f"    Compte   : {account.email}")
 
         contact = _make_contact(cid, first_name, last_name, email, country, sex, company_name)
 
@@ -143,38 +151,37 @@ def run(dry_run: bool) -> None:
             result = render_for_contact("intro", contact, account, position=i)
         except Exception as exc:
             print(f"    ✗ Erreur de rendu : {exc}")
-            results.append((email, False, str(exc)))
+            results.append((email, account.email, False, str(exc)))
             continue
 
         print(f"    Langue   : {result.language.upper()}  |  Variant : {result.ab_variant}")
         print(f"    Objet    : {result.subject}")
-        # Aperçu du corps (50 premiers caractères du texte brut)
         body_preview = result.body.replace("<p>", "").replace("</p>", " ")[:100].strip()
         print(f"    Corps    : {body_preview}…")
 
         if dry_run:
             print("    → [DRY RUN] Non envoyé\n")
-            results.append((email, True, "dry-run"))
+            results.append((email, account.email, True, "dry-run"))
             continue
 
         # Envoi réel
         try:
             payload = _build_mime(email, account.email, result.subject, result.body)
-            response = service.users().messages().send(userId="me", body=payload).execute()
+            response = services[account.email].users().messages().send(userId="me", body=payload).execute()
             gmail_id = response.get("id", "?")
             print(f"    ✓ Envoyé — Gmail ID : {gmail_id}\n")
-            results.append((email, True, gmail_id))
+            results.append((email, account.email, True, gmail_id))
         except Exception as exc:
             print(f"    ✗ Échec d'envoi : {exc}\n")
-            results.append((email, False, str(exc)))
+            results.append((email, account.email, False, str(exc)))
 
     # Résumé
     print("  ── Résumé ─────────────────────────────────────────")
-    ok = sum(1 for _, success, _ in results if success)
+    ok = sum(1 for _, _, success, _ in results if success)
     print(f"  {ok}/{len(results)} mails {'simulés' if dry_run else 'envoyés'} avec succès\n")
-    for email, success, detail in results:
+    for email, compte, success, detail in results:
         icon = "✓" if success else "✗"
-        print(f"  {icon} {email:<35} {detail}")
+        print(f"  {icon} {email:<35} via {compte:<30} {detail}")
     print()
 
 

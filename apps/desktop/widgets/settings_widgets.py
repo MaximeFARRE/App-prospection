@@ -174,7 +174,16 @@ class SendLimitsSection(QGroupBox):
         self.company_weekly_limit_spin.setRange(1, 100)
         layout.addRow("Max mails / entreprise / semaine", self.company_weekly_limit_spin)
 
+        # Poids de répartition — valeurs relatives (pas besoin de sommer à 100)
         self.weight_1_spin = QSpinBox()
-        self.weight_1_spin.setRange(1, 99)
-        self.weight_1_spin.setSuffix(" %")
-        layout.addRow("Poids compte 1 (compte 2 = reste)", self.weight_1_spin)
+        self.weight_1_spin.setRange(1, 999)
+        self.weight_1_spin.setSuffix("")
+        layout.addRow("Poids répartition — Compte 1", self.weight_1_spin)
+
+        self.weight_2_spin = QSpinBox()
+        self.weight_2_spin.setRange(1, 999)
+        layout.addRow("Poids répartition — Compte 2", self.weight_2_spin)
+
+        self.weight_3_spin = QSpinBox()
+        self.weight_3_spin.setRange(1, 999)
+        layout.addRow("Poids répartition — Compte 3", self.weight_3_spin)

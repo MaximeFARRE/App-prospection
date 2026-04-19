@@ -17,6 +17,8 @@ _LIMIT_KEYS = (
     "max_delay_between_sends_sec",
     "company_weekly_send_limit",
     "gmail_weight_1",
+    "gmail_weight_2",
+    "gmail_weight_3",
 )
 
 
@@ -29,6 +31,8 @@ def get_settings() -> dict[str, Any]:
         "max_delay_between_sends_sec":   settings.max_delay_between_sends_sec,
         "company_weekly_send_limit":     settings.company_weekly_send_limit,
         "gmail_weight_1":                settings.gmail_weight_1,
+        "gmail_weight_2":                settings.gmail_weight_2,
+        "gmail_weight_3":                settings.gmail_weight_3,
         "last_gmail_sync_at": None,
     }
     for key in _LIMIT_KEYS:
@@ -64,7 +68,9 @@ def apply_runtime_overrides() -> None:
     if maximum <= minimum:
         maximum = minimum + 1
     company_weekly = max(1, int(cfg["company_weekly_send_limit"]))
-    weight_1       = max(1, min(99, int(cfg["gmail_weight_1"])))
+    weight_1 = max(1, int(cfg["gmail_weight_1"]))
+    weight_2 = max(1, int(cfg["gmail_weight_2"]))
+    weight_3 = max(1, int(cfg["gmail_weight_3"]))
 
     settings.daily_send_limit_per_account  = daily
     settings.hourly_send_limit_per_account = hourly
@@ -72,6 +78,8 @@ def apply_runtime_overrides() -> None:
     settings.max_delay_between_sends_sec   = maximum
     settings.company_weekly_send_limit     = company_weekly
     settings.gmail_weight_1               = weight_1
+    settings.gmail_weight_2               = weight_2
+    settings.gmail_weight_3               = weight_3
 
     save_settings({
         "daily_send_limit_per_account":  daily,
@@ -80,6 +88,8 @@ def apply_runtime_overrides() -> None:
         "max_delay_between_sends_sec":   maximum,
         "company_weekly_send_limit":     company_weekly,
         "gmail_weight_1":                weight_1,
+        "gmail_weight_2":                weight_2,
+        "gmail_weight_3":                weight_3,
     })
 
 

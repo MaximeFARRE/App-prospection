@@ -124,17 +124,16 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
 # ── Helpers internes ──────────────────────────────────────────────────────────
 
 def _build_account_weights(accounts: list[GmailAccount]) -> list[float]:
-    """Retourne la liste de poids correspondant aux comptes configurés."""
-    if len(accounts) == 1:
-        return [1.0]
-    # Poids compte 1 en %, compte 2 = 100 - poids 1
-    w1 = max(1, min(99, int(settings.gmail_weight_1)))
-    w2 = 100 - w1
-    raw = [w1, w2]
-    # Si plus de 2 comptes : poids égaux pour les suivants
-    while len(raw) < len(accounts):
-        raw.append(50)
-    return [float(w) for w in raw[:len(accounts)]]
+    """Retourne la liste de poids correspondant aux comptes configurés.
+
+    Lit gmail_weight_1, gmail_weight_2, gmail_weight_3… pour chaque slot.
+    Les poids n'ont pas besoin de sommer à 100 : random.choices les normalise.
+    """
+    weights = []
+    for i in range(1, len(accounts) + 1):
+        w = max(1, int(getattr(settings, f"gmail_weight_{i}", 50)))
+        weights.append(float(w))
+    return weights
 
 
 def _load_sent_offsets(
