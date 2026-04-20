@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import GmailAccount, settings
+from app.models.campaign_state import CampaignState
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.message import Message
@@ -95,7 +96,7 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
         counter  = position_counters.get(key, 0)
         position = offset + counter
 
-        account = random.choices(accounts, weights=weights, k=1)[0]
+        account = _pick_account(step, contact, campaign_name, accounts, weights, db)
         result  = render_for_contact(step, contact, account, position=position)
 
         queue.append(
@@ -122,6 +123,40 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
 
 
 # ── Helpers internes ──────────────────────────────────────────────────────────
+
+def _pick_account(
+    step: str,
+    contact: Contact,
+    campaign_name: str,
+    accounts: list[GmailAccount],
+    weights: list[float],
+    db: Session,
+) -> GmailAccount:
+    """Sélectionne le compte expéditeur.
+
+    - Pour l'intro : tirage aléatoire pondéré.
+    - Pour les relances : réutilise le compte qui a envoyé l'intro (cohérence
+      dans la boîte de réception du destinataire). Si introuvable, tirage aléatoire.
+    """
+    if step == "intro":
+        return random.choices(accounts, weights=weights, k=1)[0]
+
+    state = (
+        db.query(CampaignState)
+        .filter(
+            CampaignState.contact_id == contact.id,
+            CampaignState.campaign_name == campaign_name,
+        )
+        .first()
+    )
+    if state and state.intro_from_email:
+        matching = next((a for a in accounts if a.email == state.intro_from_email), None)
+        if matching:
+            return matching
+
+    # Fallback : tirage aléatoire (intro pas encore envoyée ou compte retiré)
+    return random.choices(accounts, weights=weights, k=1)[0]
+
 
 def _build_account_weights(accounts: list[GmailAccount]) -> list[float]:
     """Retourne la liste de poids correspondant aux comptes configurés.

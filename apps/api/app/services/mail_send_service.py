@@ -82,7 +82,7 @@ def send_campaign(
             response = _send_message_with_retry(service, item, account)
             sent_at = datetime.utcnow()
             _record_sent_message(item, account, campaign_name, response.get("id"), sent_at, db)
-            _upsert_campaign_state(item, campaign_name, sent_at, db)
+            _upsert_campaign_state(item, account, campaign_name, sent_at, db)
             db.commit()
 
             progress.sent += 1
@@ -275,6 +275,7 @@ def _record_sent_message(
 
 def _upsert_campaign_state(
     item: QueuedEmail,
+    account: GmailAccount,
     campaign_name: str,
     sent_at: datetime,
     db: Session,
@@ -294,6 +295,8 @@ def _upsert_campaign_state(
     if item.step == "intro":
         state.intro_sent = True
         state.intro_sent_at = sent_at
+        # Mémorise le compte expéditeur pour que les relances partent du même compte
+        state.intro_from_email = account.email
     if item.step == "followup_1":
         state.followup_1_sent = True
         state.followup_1_sent_at = sent_at

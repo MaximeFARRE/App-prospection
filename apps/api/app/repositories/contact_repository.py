@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -30,7 +30,9 @@ def get_all(
         .limit(parsed["limit"])
         .all()
     )
-    return _attach_company(rows)
+    contacts = _attach_company(rows)
+    _attach_has_been_contacted(db, contacts)
+    return contacts
 
 
 def get_by_id(db: Session, contact_id: int) -> Contact | None:
@@ -106,6 +108,20 @@ def set_sex(db: Session, contact_id: int, sex: str | None) -> Contact | None:
     if contact is None:
         return None
     contact.sex = normalize_sex(sex)
+    return contact
+
+
+def set_names(
+    db: Session,
+    contact_id: int,
+    first_name: str | None,
+    last_name: str | None,
+) -> Contact | None:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if contact is None:
+        return None
+    contact.first_name = _clean_optional_text(first_name)
+    contact.last_name = _clean_optional_text(last_name)
     return contact
 
 
@@ -214,6 +230,14 @@ def _apply_filters(query, filters: dict[str, Any]):
     if email_status and email_status != EMAIL_STATUS_MISSING:
         query = query.filter(func.lower(func.coalesce(Contact.email_status, "")) == email_status)
 
+    contacted = _normalize_contacted(filters["contacted"])
+    if contacted is not None:
+        message_exists = exists().where(Message.contact_id == Contact.id)
+        if contacted:
+            query = query.filter(message_exists)
+        else:
+            query = query.filter(~message_exists)
+
     return query
 
 
@@ -239,6 +263,7 @@ def _parse_filters(filters: Mapping[str, Any] | None) -> dict[str, Any]:
         "country": _clean_text(payload.get("country")),
         "status": payload.get("status"),
         "email_status": payload.get("email_status"),
+        "contacted": payload.get("contacted"),
         "skip": skip,
         "limit": limit,
     }
@@ -250,6 +275,25 @@ def _attach_company(rows: list[tuple[Contact, Company | None]]) -> list[Contact]
         setattr(contact, "company", company)
         contacts.append(contact)
     return contacts
+
+
+def _attach_has_been_contacted(db: Session, contacts: list[Contact]) -> None:
+    for contact in contacts:
+        setattr(contact, "has_been_contacted", False)
+
+    contact_ids = [contact.id for contact in contacts]
+    if not contact_ids:
+        return
+
+    rows = (
+        db.query(Message.contact_id)
+        .filter(Message.contact_id.in_(contact_ids))
+        .distinct()
+        .all()
+    )
+    contacted_ids = {contact_id for (contact_id,) in rows if contact_id is not None}
+    for contact in contacts:
+        setattr(contact, "has_been_contacted", contact.id in contacted_ids)
 
 
 def _normalize_status(value: Any) -> str | None:
@@ -285,6 +329,23 @@ def _normalize_email_status(value: Any) -> str | None:
     return normalized
 
 
+def _normalize_contacted(value: Any) -> bool | None:
+    if value is None:
+        return None
+
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+
+    contacted_values = {"contacted", "yes", "true", "1", "oui"}
+    not_contacted_values = {"not_contacted", "no", "false", "0", "non"}
+    if normalized in contacted_values:
+        return True
+    if normalized in not_contacted_values:
+        return False
+    return None
+
+
 def _count_email_status(db: Session, status: str) -> int:
     if status == EMAIL_STATUS_MISSING:
         return int(db.query(func.count(Contact.id)).filter(Contact.email_status.is_(None)).scalar() or 0)
@@ -313,3 +374,10 @@ def _clean_text(raw_value: Any) -> str | None:
     if not value:
         return None
     return value
+
+
+def _clean_optional_text(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    value = str(raw_value).strip()
+    return value if value else None

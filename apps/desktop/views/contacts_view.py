@@ -95,15 +95,36 @@ class ContactsView(QWidget):
         self._blocked_filter.addItem("Non", "active")
         filters_row.addWidget(self._blocked_filter, stretch=1)
 
+        self._contacted_filter = QComboBox()
+        self._contacted_filter.addItem("Contacté: Tous", None)
+        self._contacted_filter.addItem("Oui", "contacted")
+        self._contacted_filter.addItem("Non", "not_contacted")
+        filters_row.addWidget(self._contacted_filter, stretch=1)
+
         root.addLayout(filters_row)
 
-        self._table = QTableWidget(0, 9)
+        self._table = QTableWidget(0, 10)
         self._table.setHorizontalHeaderLabels(
-            ["Prénom", "Nom", "Sexe", "Entreprise", "Poste", "Email", "Pays", "Statut email", "Bloqué"]
+            [
+                "Prénom",
+                "Nom",
+                "Sexe",
+                "Entreprise",
+                "Poste",
+                "Email",
+                "Pays",
+                "Statut email",
+                "Déjà contacté",
+                "Bloqué",
+            ]
         )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setEditTriggers(
+            QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+        )
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setAlternatingRowColors(True)
@@ -130,8 +151,11 @@ class ContactsView(QWidget):
         self._country_input.textChanged.connect(self._schedule_reload)
         self._email_status_filter.currentIndexChanged.connect(self._schedule_reload)
         self._blocked_filter.currentIndexChanged.connect(self._schedule_reload)
+        self._contacted_filter.currentIndexChanged.connect(self._schedule_reload)
         self._prev_button.clicked.connect(self._go_prev_page)
         self._next_button.clicked.connect(self._go_next_page)
+        self._table.cellClicked.connect(self._on_name_cell_clicked)
+        self._table.itemChanged.connect(self._on_table_item_changed)
         self._table.cellDoubleClicked.connect(self._open_contact_detail)
 
     def _schedule_reload(self, *_args: Any) -> None:
@@ -206,13 +230,16 @@ class ContactsView(QWidget):
                 (5, row["email"]),
                 (6, row["country"]),
                 (7, row["email_status"]),
-                (8, "Oui" if row["is_blocked"] else "Non"),
+                (8, "Oui" if row["has_been_contacted"] else "Non"),
+                (9, "Oui" if row["is_blocked"] else "Non"),
             ]
 
             for col_index, value in cells:
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, row["id"])
-                if col_index == 8:
+                if col_index not in {0, 1}:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if col_index in {8, 9}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(row_index, col_index, item)
 
@@ -229,6 +256,9 @@ class ContactsView(QWidget):
 
         self._is_rendering = False
         self._status_label.setText(f"{self._total_contacts} contact(s)")
+
+    def refresh(self) -> None:
+        self._load_page()
 
     def _update_pagination_controls(self) -> None:
         total_pages = max(1, ceil(self._total_contacts / PAGE_SIZE))
@@ -262,6 +292,10 @@ class ContactsView(QWidget):
         if blocked:
             filters["status"] = blocked
 
+        contacted = self._contacted_filter.currentData()
+        if contacted:
+            filters["contacted"] = contacted
+
         return filters
 
     def _on_sex_changed(self, contact_id: int, combo: QComboBox) -> None:
@@ -289,6 +323,47 @@ class ContactsView(QWidget):
 
         self._rows[row_index]["sex"] = next_value or ""
 
+    def _on_name_cell_clicked(self, row_index: int, column_index: int) -> None:
+        if self._is_rendering:
+            return
+        if column_index not in {0, 1}:
+            return
+        item = self._table.item(row_index, column_index)
+        if item is not None:
+            self._table.editItem(item)
+
+    def _on_table_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._is_rendering:
+            return
+
+        column_index = item.column()
+        if column_index not in {0, 1}:
+            return
+
+        row_index = item.row()
+        if row_index < 0 or row_index >= len(self._rows):
+            return
+
+        field = "first_name" if column_index == 0 else "last_name"
+        current_value = str(self._rows[row_index].get(field, "") or "").strip()
+        next_value = item.text().strip()
+        if next_value == current_value:
+            return
+
+        contact_id = int(self._rows[row_index]["id"])
+        next_first_name = next_value if field == "first_name" else str(self._rows[row_index]["first_name"] or "")
+        next_last_name = next_value if field == "last_name" else str(self._rows[row_index]["last_name"] or "")
+
+        if not self._persist_names(contact_id, next_first_name, next_last_name):
+            self._table.blockSignals(True)
+            item.setText(current_value)
+            self._table.blockSignals(False)
+            return
+
+        self._rows[row_index]["first_name"] = next_first_name
+        self._rows[row_index]["last_name"] = next_last_name
+        self._status_label.setText("Nom mis à jour.")
+
     def _persist_sex(self, contact_id: int, sex: str | None) -> bool:
         db = SessionLocal()
         try:
@@ -306,13 +381,36 @@ class ContactsView(QWidget):
         finally:
             db.close()
 
+    def _persist_names(self, contact_id: int, first_name: str, last_name: str) -> bool:
+        db = SessionLocal()
+        try:
+            contact = contact_repository.set_names(
+                db,
+                contact_id=contact_id,
+                first_name=first_name,
+                last_name=last_name,
+            )
+            if contact is None:
+                QMessageBox.warning(self, "Contact", "Contact introuvable.")
+                return False
+            db.commit()
+            return True
+        except Exception as exc:
+            db.rollback()
+            QMessageBox.warning(self, "Contact", f"Impossible de mettre à jour le nom:\n{exc}")
+            return False
+        finally:
+            db.close()
+
     def _row_index_for_contact(self, contact_id: int) -> int:
         for index, row in enumerate(self._rows):
             if row["id"] == contact_id:
                 return index
         return -1
 
-    def _open_contact_detail(self, row_index: int, _column: int) -> None:
+    def _open_contact_detail(self, row_index: int, column_index: int) -> None:
+        if column_index in {0, 1}:
+            return
         if row_index < 0 or row_index >= len(self._rows):
             return
 
@@ -335,14 +433,15 @@ def _contact_to_row(contact: Any) -> dict[str, Any]:
     company = getattr(contact, "company", None)
     return {
         "id": contact.id,
-        "first_name": _to_text(contact.first_name),
-        "last_name": _to_text(contact.last_name),
+        "first_name": _to_text(contact.first_name, fallback=""),
+        "last_name": _to_text(contact.last_name, fallback=""),
         "sex": _to_text(getattr(contact, "sex", None), fallback=""),
         "company_name": _to_text(company.name if company else None),
         "job_title": _to_text(contact.job_title),
         "email": _to_text(contact.email),
         "country": _to_text(contact.country),
         "email_status": _to_text(contact.email_status),
+        "has_been_contacted": bool(getattr(contact, "has_been_contacted", False)),
         "is_blocked": bool(contact.is_blocked),
     }
 

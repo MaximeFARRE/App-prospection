@@ -113,3 +113,8 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(self._nav_buttons):
             btn.setChecked(i == index)
+
+        current_view = self._stack.widget(index)
+        refresh = getattr(current_view, "refresh", None)
+        if callable(refresh):
+            refresh()

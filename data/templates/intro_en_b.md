@@ -1,11 +1,15 @@
-Subject: Finance Internship – ESILV Engineering Student
+Subject: Possible Fit for an Internship Role
 
-Hi {{first_name}},
+Dear {{civilite}} {{last_name}},
 
-I'm a final-year engineering student at ESILV Paris (quantitative finance & data), seeking a 6-month internship from [DATE].
+I am currently looking for a 4 to 6-month gap year internship, available immediately and until September 2027.
 
-Would {{company}} have an opening that matches my profile? I'd be happy to share my resume.
+I am a Financial Engineering student at ESILV Paris, with a strong interest in technical roles related to finance, data and analysis.
 
-Kind regards,
+Outside of my studies, I work on several projects in finance and data as well as a small family business. I attached my resume and you can find more information about my background on maxime-farre.xyz.
+
+Do you think my profile could fit a need within {{company}} or your team?
+
+Best regards,
+
 {{sender_name}}
-{{sender_email}}

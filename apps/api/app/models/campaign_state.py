@@ -28,6 +28,9 @@ class CampaignState(Base):
     followup_1_sent: Mapped[bool] = mapped_column(default=False)
     followup_2_sent: Mapped[bool] = mapped_column(default=False)
 
+    # Compte expéditeur utilisé pour l'intro (réutilisé pour toutes les relances)
+    intro_from_email: Mapped[str | None] = mapped_column(String(100))
+
     # Réponse
     has_replied: Mapped[bool] = mapped_column(default=False)
     reply_sentiment: Mapped[str | None] = mapped_column(String(20))

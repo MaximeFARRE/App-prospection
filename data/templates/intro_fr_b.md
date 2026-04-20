@@ -1,11 +1,15 @@
-Subject: Stage Finance – Profil Ingénieur ESILV
+Subject: Je pense que mon profil pourrait vous intéresser
 
-Bonjour {{first_name}},
+Bonjour {{civilite}} {{last_name}},
 
-Je me permets de vous contacter au sujet d'un stage de fin d'études (6 mois, à partir de [DATE]).
+Je me permets de vous contacter car je recherche actuellement un stage de césure de 4 à 6 mois, disponible dès maintenant et jusqu’à septembre 2027.
 
-Ingénieur en finance quantitative et data à l'ESILV, je cherche à mettre mes compétences en pratique au sein d'une structure comme {{company}}. Mon profil vous intéresserait-il ?
+Je suis étudiant en Master Ingénierie Financière, avec un intérêt particulier pour les métiers techniques en finance, data et analyse.
 
-Dans l'attente de votre retour,
+En dehors de mes études, je mène plusieurs projets en finance et en data ainsi qu’une entreprise familiale. Je joins mon CV à ce message et vous trouverez davantage d’informations sur mon parcours sur maxime-farre.xyz.
+
+Pensez-vous que mon profil pourrait correspondre à un besoin au sein de {{company}} ou de votre équipe ?
+
+Bien à vous,
+
 {{sender_name}}
-{{sender_email}}

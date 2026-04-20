@@ -8,6 +8,7 @@ from app.models.campaign_state import CampaignState
 from app.models.contact import Contact
 from app.models.message import Message
 from app.models.reply import Reply
+from app.repositories import contact_repository
 from app.services.eligibility_service import check_eligibility
 
 
@@ -104,6 +105,88 @@ def test_contact_with_reply_is_denied(db: Session) -> None:
     result = check_eligibility(contact, db, "camp1")
     assert result.eligible is False
     assert result.reason == "replied"
+
+
+def test_contacts_repository_marks_contacted_status_from_messages(db: Session) -> None:
+    contacted = _create_contact(db, email="contacted@example.com")
+    new_contact = _create_contact(db, email="new-contact@example.com")
+    db.add(
+        Message(
+            contact_id=contacted.id,
+            campaign_name=None,
+            subject="historical",
+            body="historical",
+            from_email="sender@example.com",
+            message_type="historical",
+            gmail_message_id="gmail-historical-1",
+            sent_at=_utcnow_naive(),
+        )
+    )
+    db.commit()
+
+    contacts = contact_repository.get_all(db, {"page": 1, "page_size": 100})
+    by_id = {contact.id: contact for contact in contacts}
+
+    assert bool(getattr(by_id[contacted.id], "has_been_contacted", False)) is True
+    assert bool(getattr(by_id[new_contact.id], "has_been_contacted", False)) is False
+
+
+def test_contacts_repository_filters_contacted_status(db: Session) -> None:
+    contacted = _create_contact(db, email="only-contacted@example.com")
+    not_contacted = _create_contact(db, email="only-not-contacted@example.com")
+    db.add(
+        Message(
+            contact_id=contacted.id,
+            campaign_name=None,
+            subject="historical",
+            body="historical",
+            from_email="sender@example.com",
+            message_type="historical",
+            gmail_message_id="gmail-historical-2",
+            sent_at=_utcnow_naive(),
+        )
+    )
+    db.commit()
+
+    contacted_rows = contact_repository.get_all(db, {"page": 1, "page_size": 100, "contacted": "contacted"})
+    not_contacted_rows = contact_repository.get_all(
+        db,
+        {"page": 1, "page_size": 100, "contacted": "not_contacted"},
+    )
+
+    contacted_ids = {row.id for row in contacted_rows}
+    not_contacted_ids = {row.id for row in not_contacted_rows}
+
+    assert contacted.id in contacted_ids
+    assert not_contacted.id not in contacted_ids
+    assert not_contacted.id in not_contacted_ids
+    assert contacted.id not in not_contacted_ids
+
+
+def test_contacts_repository_set_names_updates_first_and_last_name(db: Session) -> None:
+    contact = _create_contact(db, email="rename@example.com")
+
+    updated = contact_repository.set_names(
+        db,
+        contact_id=contact.id,
+        first_name="  Maxime  ",
+        last_name="  Farre  ",
+    )
+    db.commit()
+    assert updated is not None
+    assert updated.first_name == "Maxime"
+    assert updated.last_name == "Farre"
+
+    updated = contact_repository.set_names(
+        db,
+        contact_id=contact.id,
+        first_name="",
+        last_name="   ",
+    )
+    db.commit()
+    assert updated is not None
+    assert updated.first_name is None
+    assert updated.last_name is None
 
 
 def _create_contact(db: Session, email: str, is_blocked: bool = False) -> Contact:
