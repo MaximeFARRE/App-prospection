@@ -9,6 +9,7 @@ Flux pour chaque ligne :
     6. Mettre à jour l'ImportJob avec les stats finales
 """
 import csv
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +35,65 @@ class ImportResult:
     duplicate_count: int = 0
     error_count: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+# ── Alias de colonnes (anciens + nouveaux formats CSV) ───────────────────────
+
+FIRST_NAME_COLUMNS: tuple[str, ...] = ("prospect_first_name", "First Name")
+LAST_NAME_COLUMNS: tuple[str, ...] = ("prospect_last_name", "Last Name")
+FULL_NAME_COLUMNS: tuple[str, ...] = ("prospect_full_name", "Full Name")
+
+EMAIL_COLUMNS: tuple[str, ...] = (
+    "contact_professions_email",
+    "Work Email",
+    "Personal Email",
+    "Additional Email 1",
+    "Additional Email 2",
+    "Additional Email 3",
+    "contact_emails",
+)
+
+SOURCE_PROSPECT_ID_COLUMNS: tuple[str, ...] = ("prospect_id", "Prospect ID")
+SOURCE_BUSINESS_ID_COLUMNS: tuple[str, ...] = ("business_id", "Business ID")
+
+JOB_TITLE_COLUMNS: tuple[str, ...] = ("prospect_job_title", "Title", "Headline")
+JOB_LEVEL_COLUMNS: tuple[str, ...] = ("prospect_job_level_main",)
+LINKEDIN_COLUMNS: tuple[str, ...] = ("prospect_linkedin", "Linkedin URL", "LinkedIn URL")
+
+COUNTRY_COLUMNS: tuple[str, ...] = ("prospect_country_name", "Country")
+REGION_COLUMNS: tuple[str, ...] = ("prospect_region_name", "Region")
+CITY_COLUMNS: tuple[str, ...] = ("prospect_city", "City")
+LOCATION_COLUMNS: tuple[str, ...] = ("Location",)
+
+PHONE_COLUMNS: tuple[str, ...] = (
+    "contact_mobile_phone",
+    "Phone",
+    "Phone 2",
+    "Phone 3",
+    "Phone 4",
+)
+EMAIL_STATUS_COLUMNS: tuple[str, ...] = (
+    "contact_professional_email_status",
+    "Work Email Status",
+)
+SEX_COLUMNS: tuple[str, ...] = (
+    "sexe",
+    "sex",
+    "gender",
+    "Gender",
+    "prospect_gender",
+    "contact_gender",
+)
+
+COMPANY_NAME_COLUMNS: tuple[str, ...] = ("prospect_company_name", "Company")
+COMPANY_WEBSITE_COLUMNS: tuple[str, ...] = ("prospect_company_website", "Company Website")
+COMPANY_LINKEDIN_COLUMNS: tuple[str, ...] = (
+    "prospect_company_linkedin",
+    "Company Linkedin URL",
+    "Company LinkedIn URL",
+)
+
+_EMAIL_SPLITTER = re.compile(r"[;,|]")
 
 
 # ── Point d'entrée public ─────────────────────────────────────────────────────
@@ -126,11 +186,12 @@ def _process_row(
     seen_emails: set[str],
     seen_source_prospect_ids: set[str],
 ) -> None:
-    company_id = _get_or_create_company(row, db, result)
+    row_lookup = _build_row_lookup(row)
+    company_id = _get_or_create_company(row, row_lookup, db, result)
 
-    email_raw = _clean(row.get("contact_professions_email"))
-    email_norm = normalize_email(email_raw)
-    source_prospect_id = _clean(row.get("prospect_id"))
+    email_raw, email_norm = _extract_primary_email(row, row_lookup)
+    source_prospect_id = _row_get(row, row_lookup, SOURCE_PROSPECT_ID_COLUMNS)
+    country, region, city = _extract_location(row, row_lookup)
 
     if email_norm and email_norm in seen_emails:
         result.duplicate_count += 1
@@ -153,29 +214,29 @@ def _process_row(
         return
 
     # Noms : colonnes séparées en priorité, fallback sur full_name
-    first_name = _clean(row.get("prospect_first_name"))
-    last_name = _clean(row.get("prospect_last_name"))
+    first_name = _row_get(row, row_lookup, FIRST_NAME_COLUMNS)
+    last_name = _row_get(row, row_lookup, LAST_NAME_COLUMNS)
     if not first_name and not last_name:
-        first_name, last_name = split_full_name(_clean(row.get("prospect_full_name")))
+        first_name, last_name = split_full_name(_row_get(row, row_lookup, FULL_NAME_COLUMNS))
 
     contact = Contact(
         first_name=first_name,
         last_name=last_name,
-        sex=_extract_sex(row),
+        sex=_extract_sex(row, row_lookup),
         email=email_raw,
         email_normalized=email_norm,
-        job_title=_clean(row.get("prospect_job_title")),
-        job_level=_clean(row.get("prospect_job_level_main")),
-        country=_clean(row.get("prospect_country_name")),
-        region=_clean(row.get("prospect_region_name")),
-        city=_clean(row.get("prospect_city")),
-        phone=_clean(row.get("contact_mobile_phone")),
-        linkedin_url=_clean(row.get("prospect_linkedin")),
-        email_status=_clean(row.get("contact_professional_email_status")),
+        job_title=_row_get(row, row_lookup, JOB_TITLE_COLUMNS),
+        job_level=_row_get(row, row_lookup, JOB_LEVEL_COLUMNS),
+        country=country,
+        region=region,
+        city=city,
+        phone=_row_get(row, row_lookup, PHONE_COLUMNS),
+        linkedin_url=_row_get(row, row_lookup, LINKEDIN_COLUMNS),
+        email_status=_row_get(row, row_lookup, EMAIL_STATUS_COLUMNS),
         company_id=company_id,
         source=source,
         source_prospect_id=source_prospect_id,
-        source_business_id=_clean(row.get("business_id")),
+        source_business_id=_row_get(row, row_lookup, SOURCE_BUSINESS_ID_COLUMNS),
     )
     db.add(contact)
     if email_norm:
@@ -187,11 +248,12 @@ def _process_row(
 
 def _get_or_create_company(
     row: dict[str, str],
+    row_lookup: dict[str, str],
     db: Session,
     result: ImportResult,
 ) -> int | None:
     """Retourne l'id de l'entreprise, la crée si elle n'existe pas encore."""
-    name = _clean(row.get("prospect_company_name"))
+    name = _row_get(row, row_lookup, COMPANY_NAME_COLUMNS)
     if not name:
         return None
 
@@ -199,12 +261,13 @@ def _get_or_create_company(
     if existing:
         return existing.id
 
+    country, _, _ = _extract_location(row, row_lookup)
     company = Company(
         name=name,
-        website=_clean(row.get("prospect_company_website")),
-        linkedin_url=_clean(row.get("prospect_company_linkedin")),
-        country=_clean(row.get("prospect_country_name")),
-        source_business_id=_clean(row.get("business_id")),
+        website=_row_get(row, row_lookup, COMPANY_WEBSITE_COLUMNS),
+        linkedin_url=_row_get(row, row_lookup, COMPANY_LINKEDIN_COLUMNS),
+        country=country,
+        source_business_id=_row_get(row, row_lookup, SOURCE_BUSINESS_ID_COLUMNS),
     )
     db.add(company)
     db.flush()  # nécessaire pour obtenir company.id avant d'y référencer un contact
@@ -222,9 +285,92 @@ def _clean(value: str | None) -> str | None:
     return stripped if stripped else None
 
 
-def _extract_sex(row: dict[str, str]) -> str | None:
-    for column in ("sexe", "sex", "gender", "prospect_gender", "contact_gender"):
-        normalized = normalize_sex(_clean(row.get(column)))
+def _normalize_header(header: str) -> str:
+    """Normalise un nom de colonne pour une comparaison robuste."""
+    return " ".join(header.strip().lower().split())
+
+
+def _build_row_lookup(row: dict[str, str]) -> dict[str, str]:
+    """Construit un index case-insensitive des colonnes de la ligne."""
+    lookup: dict[str, str] = {}
+    for key, value in row.items():
+        if not isinstance(key, str):
+            continue
+        lookup[_normalize_header(key)] = value
+    return lookup
+
+
+def _row_get(
+    row: dict[str, str],
+    row_lookup: dict[str, str],
+    columns: tuple[str, ...],
+) -> str | None:
+    """Retourne la première valeur non vide trouvée parmi des alias de colonnes."""
+    for column in columns:
+        value = _clean(row.get(column))
+        if value:
+            return value
+
+    for column in columns:
+        value = _clean(row_lookup.get(_normalize_header(column)))
+        if value:
+            return value
+
+    return None
+
+
+def _extract_primary_email(
+    row: dict[str, str],
+    row_lookup: dict[str, str],
+) -> tuple[str | None, str | None]:
+    """Choisit le premier email valide parmi les colonnes supportées."""
+    for column in EMAIL_COLUMNS:
+        raw_value = _row_get(row, row_lookup, (column,))
+        if not raw_value:
+            continue
+        candidates = [raw_value]
+        if _EMAIL_SPLITTER.search(raw_value):
+            candidates = [part.strip() for part in _EMAIL_SPLITTER.split(raw_value) if part.strip()]
+
+        for candidate in candidates:
+            normalized = normalize_email(candidate)
+            if normalized:
+                return candidate, normalized
+
+    return None, None
+
+
+def _extract_location(
+    row: dict[str, str],
+    row_lookup: dict[str, str],
+) -> tuple[str | None, str | None, str | None]:
+    """Extrait country/region/city, avec fallback depuis une colonne Location."""
+    country = _row_get(row, row_lookup, COUNTRY_COLUMNS)
+    region = _row_get(row, row_lookup, REGION_COLUMNS)
+    city = _row_get(row, row_lookup, CITY_COLUMNS)
+
+    if country or region or city:
+        return country, region, city
+
+    location = _row_get(row, row_lookup, LOCATION_COLUMNS)
+    if not location:
+        return None, None, None
+
+    parts = [part.strip() for part in location.split(",") if part.strip()]
+    if len(parts) == 1:
+        return None, parts[0], None
+    if len(parts) == 2:
+        return parts[1], None, parts[0]
+
+    return parts[-1], ", ".join(parts[1:-1]), parts[0]
+
+
+def _extract_sex(
+    row: dict[str, str],
+    row_lookup: dict[str, str],
+) -> str | None:
+    for column in SEX_COLUMNS:
+        normalized = normalize_sex(_row_get(row, row_lookup, (column,)))
         if normalized is not None:
             return normalized
     return None
