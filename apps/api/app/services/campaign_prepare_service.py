@@ -14,6 +14,7 @@ from app.models.contact import Contact
 from app.models.message import Message
 from app.services.eligibility_service import EligibilityResult, check_eligibility
 from app.services.mail_render_service import detect_language, render_for_contact
+from app.utils.email_normalization import normalize_email
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
@@ -50,6 +51,21 @@ class PrepareResult:
     skipped: list[EligibilityResult]
     total_contacts: int
     stats: CampaignStats
+
+
+PERSONAL_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "msn.com",
+        "yahoo.com",
+        "yahoo.fr",
+        "yahoo.co.uk",
+    }
+)
 
 
 # ── Point d'entrée public ─────────────────────────────────────────────────────
@@ -112,6 +128,7 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
         )
         position_counters[key] = counter + 1
 
+    queue = _prioritize_business_emails(queue)
     stats = _compute_stats(queue, skipped, accounts)
     return PrepareResult(
         campaign_name=campaign_name,
@@ -249,3 +266,20 @@ def _attach_companies(contacts: list[Contact], db: Session) -> None:
     company_by_id = {co.id: co for co in companies}
     for contact in contacts:
         setattr(contact, "company", company_by_id.get(contact.company_id))
+
+
+def _prioritize_business_emails(queue: list[QueuedEmail]) -> list[QueuedEmail]:
+    """Trie la queue d'envoi: emails pro d'abord, emails perso ensuite."""
+    return sorted(
+        queue,
+        key=lambda item: 1 if _is_personal_email(item.contact.email) else 0,
+    )
+
+
+def _is_personal_email(email: str | None) -> bool:
+    normalized = normalize_email(email)
+    if normalized is None:
+        return False
+
+    _, _, domain = normalized.rpartition("@")
+    return domain in PERSONAL_EMAIL_DOMAINS
