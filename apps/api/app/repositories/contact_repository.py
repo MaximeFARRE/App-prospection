@@ -8,6 +8,7 @@ from app.models.company import Company
 from app.models.contact import Contact
 from app.models.message import Message
 from app.models.reply import Reply
+from app.utils.email_normalization import normalize_email
 from app.utils.sex_normalization import normalize_sex
 
 CONTACT_PAGE_SIZE_DEFAULT = 50
@@ -122,6 +123,63 @@ def set_names(
         return None
     contact.first_name = _clean_optional_text(first_name)
     contact.last_name = _clean_optional_text(last_name)
+    return contact
+
+
+def create_manual_contact(
+    db: Session,
+    *,
+    first_name: str | None,
+    last_name: str | None,
+    email: str,
+    company_name: str | None = None,
+    job_title: str | None = None,
+    sex: str | None = None,
+    country: str | None = None,
+    city: str | None = None,
+    phone: str | None = None,
+    linkedin_url: str | None = None,
+    notes: str | None = None,
+    source: str | None = "manual",
+) -> Contact:
+    """Crée un contact depuis le formulaire manuel avec validation minimale."""
+    email_raw = _clean_optional_text(email)
+    email_normalized = normalize_email(email_raw)
+    if email_raw is None or email_normalized is None:
+        raise ValueError("L'email est obligatoire et doit être valide.")
+
+    existing = (
+        db.query(Contact)
+        .filter(
+            or_(
+                Contact.email_normalized == email_normalized,
+                func.lower(func.coalesce(Contact.email, "")) == email_normalized,
+            )
+        )
+        .first()
+    )
+    if existing is not None:
+        raise ValueError("Un contact avec cet email existe déjà.")
+
+    company = _get_or_create_company_by_name(db, company_name)
+    contact = Contact(
+        first_name=_clean_optional_text(first_name),
+        last_name=_clean_optional_text(last_name),
+        sex=normalize_sex(sex),
+        email=email_raw,
+        email_normalized=email_normalized,
+        company_id=company.id if company is not None else None,
+        job_title=_clean_optional_text(job_title),
+        country=_clean_optional_text(country),
+        city=_clean_optional_text(city),
+        phone=_clean_optional_text(phone),
+        linkedin_url=_clean_optional_text(linkedin_url),
+        source=_clean_optional_text(source) or "manual",
+        notes=_clean_optional_text(notes),
+    )
+    db.add(contact)
+    db.flush()
+    setattr(contact, "company", company)
     return contact
 
 
@@ -381,3 +439,22 @@ def _clean_optional_text(raw_value: Any) -> str | None:
         return None
     value = str(raw_value).strip()
     return value if value else None
+
+
+def _get_or_create_company_by_name(db: Session, company_name: Any) -> Company | None:
+    cleaned_name = _clean_optional_text(company_name)
+    if cleaned_name is None:
+        return None
+
+    existing = (
+        db.query(Company)
+        .filter(func.lower(func.coalesce(Company.name, "")) == cleaned_name.lower())
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    company = Company(name=cleaned_name)
+    db.add(company)
+    db.flush()
+    return company

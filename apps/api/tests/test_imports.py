@@ -168,3 +168,29 @@ def test_import_csv_new_format_falls_back_to_personal_email_when_work_invalid(
     saved = db.query(Contact).filter(Contact.email_normalized == "camille.dupont@example.com").first()
     assert saved is not None
     assert saved.email == "camille.dupont@example.com"
+
+
+def test_import_csv_skips_row_without_email(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        {
+            "prospect_first_name": "NoEmail",
+            "prospect_last_name": "Person",
+            "prospect_company_name": "NoEmail Corp",
+            "prospect_job_title": "Analyst",
+            "prospect_id": "prospect-no-email",
+        }
+    ]
+    monkeypatch.setattr(csv_import_service, "_read_csv", lambda _path: rows)
+
+    result = csv_import_service.import_csv(Path("prospects_without_email.csv"), db)
+
+    assert result.total_rows == 1
+    assert result.created_contacts == 0
+    assert result.created_companies == 0
+    assert result.duplicate_count == 0
+    assert result.error_count == 1
+    assert db.query(Contact).count() == 0
+    assert db.query(Company).count() == 0

@@ -7,6 +7,7 @@ from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,7 +21,9 @@ from PyQt6.QtWidgets import (
 
 from app.db.session import SessionLocal
 from app.repositories import contact_repository
+from workers.contacts_workers import ContactSexDetectionWorker
 from widgets.contact_detail_dialog import ContactDetailDialog
+from widgets.manual_contact_dialog import ManualContactDialog, ManualContactPayload
 
 
 PAGE_SIZE = 100
@@ -56,6 +59,7 @@ class ContactsView(QWidget):
         self._rows: list[dict[str, Any]] = []
         self._request_id = 0
         self._active_loader: _ContactsPageLoader | None = None
+        self._sex_detection_worker: ContactSexDetectionWorker | None = None
         self._is_rendering = False
 
         self._debounce_timer = QTimer(self)
@@ -102,6 +106,21 @@ class ContactsView(QWidget):
         filters_row.addWidget(self._contacted_filter, stretch=1)
 
         root.addLayout(filters_row)
+
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+        actions_row.addStretch(1)
+
+        self._detect_sex_button = QPushButton("Détecter les sexes")
+        actions_row.addWidget(self._detect_sex_button)
+
+        self._block_contact_button = QPushButton("Bloquer le contact sélectionné")
+        actions_row.addWidget(self._block_contact_button)
+
+        self._add_contact_button = QPushButton("Ajouter un contact")
+        actions_row.addWidget(self._add_contact_button)
+
+        root.addLayout(actions_row)
 
         self._table = QTableWidget(0, 10)
         self._table.setHorizontalHeaderLabels(
@@ -152,6 +171,9 @@ class ContactsView(QWidget):
         self._email_status_filter.currentIndexChanged.connect(self._schedule_reload)
         self._blocked_filter.currentIndexChanged.connect(self._schedule_reload)
         self._contacted_filter.currentIndexChanged.connect(self._schedule_reload)
+        self._detect_sex_button.clicked.connect(self._start_sex_detection)
+        self._block_contact_button.clicked.connect(self._block_selected_contact)
+        self._add_contact_button.clicked.connect(self._open_add_contact_dialog)
         self._prev_button.clicked.connect(self._go_prev_page)
         self._next_button.clicked.connect(self._go_next_page)
         self._table.cellClicked.connect(self._on_name_cell_clicked)
@@ -408,6 +430,104 @@ class ContactsView(QWidget):
                 return index
         return -1
 
+    def _open_add_contact_dialog(self) -> None:
+        dialog = ManualContactDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        payload = dialog.payload()
+        if not self._create_manual_contact(payload):
+            return
+
+        self._status_label.setText("Contact ajouté.")
+        self._reload_first_page()
+
+    def _create_manual_contact(self, payload: ManualContactPayload) -> bool:
+        db = SessionLocal()
+        try:
+            contact_repository.create_manual_contact(
+                db,
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                email=payload.email,
+                company_name=payload.company_name,
+                job_title=payload.job_title,
+                sex=payload.sex,
+                country=payload.country,
+                city=payload.city,
+                phone=payload.phone,
+                linkedin_url=payload.linkedin_url,
+                notes=payload.notes,
+                source="manual",
+            )
+            db.commit()
+            return True
+        except ValueError as exc:
+            db.rollback()
+            QMessageBox.warning(self, "Ajouter un contact", str(exc))
+            return False
+        except Exception as exc:
+            db.rollback()
+            QMessageBox.warning(self, "Ajouter un contact", f"Impossible de créer le contact:\n{exc}")
+            return False
+        finally:
+            db.close()
+
+    def _start_sex_detection(self) -> None:
+        if self._sex_detection_worker is not None and self._sex_detection_worker.isRunning():
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Détection du sexe",
+            (
+                "Lancer la détection automatique du sexe à partir du prénom "
+                "pour les contacts sans sexe renseigné ?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        worker = ContactSexDetectionWorker(self)
+        worker.finished.connect(self._on_sex_detection_finished)
+        worker.finished.connect(worker.deleteLater)
+        self._sex_detection_worker = worker
+        self._detect_sex_button.setEnabled(False)
+        self._status_label.setText("Détection des sexes en cours...")
+        worker.start()
+
+    def _on_sex_detection_finished(self, payload_obj: object, error: str) -> None:
+        self._detect_sex_button.setEnabled(True)
+        self._sex_detection_worker = None
+
+        if error:
+            QMessageBox.warning(self, "Détection du sexe", f"Échec de la détection:\n{error}")
+            self._status_label.setText("Détection du sexe échouée.")
+            return
+
+        payload = dict(payload_obj)
+        updated = int(payload.get("updated_contacts", 0))
+        unchanged = int(payload.get("unchanged_contacts", 0))
+        homme = int(payload.get("homme_count", 0))
+        femme = int(payload.get("femme_count", 0))
+        ambigu = int(payload.get("ambigu_count", 0))
+
+        self._status_label.setText(f"Détection terminée: {updated} contact(s) mis à jour.")
+        QMessageBox.information(
+            self,
+            "Détection du sexe",
+            (
+                f"Contacts mis à jour: {updated}\n"
+                f"Inchangés: {unchanged}\n"
+                f"Homme: {homme}\n"
+                f"Femme: {femme}\n"
+                f"Ambigu: {ambigu}"
+            ),
+        )
+        self._reload_first_page()
+
     def _open_contact_detail(self, row_index: int, column_index: int) -> None:
         if column_index in {0, 1}:
             return
@@ -427,6 +547,50 @@ class ContactsView(QWidget):
             return
 
         ContactDetailDialog(contact, self).exec()
+
+    def _block_selected_contact(self) -> None:
+        row_index = self._table.currentRow()
+        if row_index < 0 or row_index >= len(self._rows):
+            QMessageBox.warning(self, "Bloquer un contact", "Sélectionne d'abord un contact dans la table.")
+            return
+
+        selected_row = self._rows[row_index]
+        contact_id = int(selected_row["id"])
+        if bool(selected_row.get("is_blocked", False)):
+            QMessageBox.information(self, "Bloquer un contact", "Ce contact est déjà bloqué.")
+            return
+
+        first_name = str(selected_row.get("first_name", "") or "").strip()
+        last_name = str(selected_row.get("last_name", "") or "").strip()
+        email = str(selected_row.get("email", "") or "").strip()
+        label = " ".join(part for part in [first_name, last_name] if part).strip() or email or f"#{contact_id}"
+
+        answer = QMessageBox.question(
+            self,
+            "Bloquer un contact",
+            f"Confirmer le blocage de {label} ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        db = SessionLocal()
+        try:
+            contact = contact_repository.set_blocked(db, contact_id=contact_id, is_blocked=True)
+            if contact is None:
+                QMessageBox.warning(self, "Bloquer un contact", "Contact introuvable.")
+                return
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            QMessageBox.warning(self, "Bloquer un contact", f"Impossible de bloquer ce contact:\n{exc}")
+            return
+        finally:
+            db.close()
+
+        self._status_label.setText("Contact bloqué.")
+        self._reload_first_page()
 
 
 def _contact_to_row(contact: Any) -> dict[str, Any]:

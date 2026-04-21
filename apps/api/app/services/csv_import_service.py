@@ -187,9 +187,12 @@ def _process_row(
     seen_source_prospect_ids: set[str],
 ) -> None:
     row_lookup = _build_row_lookup(row)
-    company_id = _get_or_create_company(row, row_lookup, db, result)
 
     email_raw, email_norm = _extract_primary_email(row, row_lookup)
+    if email_norm is None:
+        raise ValueError("Email manquant ou invalide (contact non importé).")
+
+    company_id = _get_or_create_company(row, row_lookup, db, result)
     source_prospect_id = _row_get(row, row_lookup, SOURCE_PROSPECT_ID_COLUMNS)
     country, region, city = _extract_location(row, row_lookup)
 

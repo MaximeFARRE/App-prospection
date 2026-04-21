@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models.campaign_state import CampaignState
@@ -187,6 +188,60 @@ def test_contacts_repository_set_names_updates_first_and_last_name(db: Session) 
     assert updated is not None
     assert updated.first_name is None
     assert updated.last_name is None
+
+
+def test_contacts_repository_set_blocked_updates_status(db: Session) -> None:
+    contact = _create_contact(db, email="blockme@example.com", is_blocked=False)
+
+    updated = contact_repository.set_blocked(db, contact_id=contact.id, is_blocked=True)
+    db.commit()
+
+    assert updated is not None
+    assert updated.is_blocked is True
+
+
+def test_contacts_repository_create_manual_contact_creates_company_and_contact(db: Session) -> None:
+    created = contact_repository.create_manual_contact(
+        db,
+        first_name=" Maxime ",
+        last_name=" Farre ",
+        email="Maxime.Farre@example.com",
+        company_name="Acme",
+        job_title="Analyst",
+        sex="male",
+        country="France",
+        city="Paris",
+        phone="0600000000",
+        linkedin_url="https://linkedin.com/in/maxime",
+        notes="Ajout manuel",
+    )
+    db.commit()
+
+    assert created.id is not None
+    assert created.first_name == "Maxime"
+    assert created.last_name == "Farre"
+    assert created.sex == "homme"
+    assert created.email == "Maxime.Farre@example.com"
+    assert created.email_normalized == "maxime.farre@example.com"
+    assert created.company_id is not None
+    assert created.source == "manual"
+
+    stored_company = getattr(created, "company", None)
+    assert stored_company is not None
+    assert stored_company.name == "Acme"
+
+
+def test_contacts_repository_create_manual_contact_rejects_duplicate_email(db: Session) -> None:
+    _create_contact(db, email="alice@example.com")
+
+    with pytest.raises(ValueError, match="existe déjà"):
+        contact_repository.create_manual_contact(
+            db,
+            first_name="Alice",
+            last_name="Martin",
+            email="ALICE@EXAMPLE.COM",
+            company_name="Acme",
+        )
 
 
 def _create_contact(db: Session, email: str, is_blocked: bool = False) -> Contact:
