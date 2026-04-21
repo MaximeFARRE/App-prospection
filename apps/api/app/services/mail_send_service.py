@@ -26,6 +26,9 @@ from app.core.config import GmailAccount, settings
 from app.models.campaign_state import CampaignState
 from app.models.message import Message
 from app.services.campaign_prepare_service import QueuedEmail
+from app.services.send_queue_verification_service import (
+    filter_send_queue_with_email_verification,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +58,17 @@ def send_campaign(
     accounts = settings.configured_gmail_accounts
     if not accounts:
         raise RuntimeError("Aucun compte Gmail configuré pour envoyer la campagne.")
+
+    verified_queue, removed_count = filter_send_queue_with_email_verification(queue)
+    if removed_count > 0:
+        logger.warning(
+            "Vérification email: %s contact(s) retiré(s) de la file d'envoi.",
+            removed_count,
+        )
+    queue[:] = verified_queue
+    if not queue:
+        logger.warning("Aucun email vérifié dans la file d'envoi.")
+        return SendProgress(total=0)
 
     progress = SendProgress(total=len(queue))
     service_by_email: dict[str, object] = {}

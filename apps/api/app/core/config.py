@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     # ─── Protection anti-spam entreprise ──────────────────────────────────────
     company_weekly_send_limit: int = 4
 
+    # ─── Vérification email (QuickEmailVerification) ──────────────────────────
+    # Clé directe (option 1) ou fichier sécurisé (option 2).
+    # Si les deux sont présents, la clé directe est prioritaire.
+    quickemailverification_api_key: str = ""
+    quickemailverification_api_key_file: str = str(
+        _PROJECT_ROOT / "data" / "secure" / "quickemailverification_api_key.txt"
+    )
+    quickemailverification_timeout_sec: int = 10
+
     @field_validator("max_delay_between_sends_sec")
     @classmethod
     def max_delay_must_exceed_min(cls, v: int, info) -> int:
@@ -122,6 +131,21 @@ class Settings(BaseSettings):
             if account.is_configured:
                 accounts.append(account)
         return accounts
+
+    @property
+    def resolved_quickemailverification_api_key(self) -> str:
+        """Retourne la clé QEV depuis env ou fichier sécurisé."""
+        direct_key = self.quickemailverification_api_key.strip()
+        if direct_key:
+            return direct_key
+
+        key_file = Path(self.quickemailverification_api_key_file).expanduser()
+        if not key_file.is_file():
+            return ""
+        try:
+            return key_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
 
 
 settings = Settings()

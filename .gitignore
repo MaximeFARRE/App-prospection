@@ -37,6 +37,8 @@ Thumbs.db
 # Données importées/exportées (ne pas versionner les CSV de travail)
 data/imports/*.csv
 data/exports/*.csv
+data/secure/*
+!data/secure/.gitkeep
 
 # Gmail OAuth tokens (sensibles)
 token*.json
