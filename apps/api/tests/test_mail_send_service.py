@@ -50,6 +50,63 @@ def test_apply_email_verification_gate_removes_unverified_and_bypasses_after_lim
     assert calls == ["invalid@example.com", "limit@example.com"]
 
 
+def test_should_send_item_with_email_verification_allows_send_on_qev_http_error() -> None:
+    item = _queued_email(contact_id=1, email="error@example.com")
+
+    def _fake_verify(_email: str) -> EmailVerificationDecision:
+        return EmailVerificationDecision(
+            can_send=False,
+            api_limit_reached=False,
+            reason="http_error:ReadTimeout",
+        )
+
+    original_verify = send_queue_verification_service.verify_email_for_send
+    send_queue_verification_service.verify_email_for_send = _fake_verify
+    try:
+        should_send, api_limit_reached, reason = (
+            send_queue_verification_service.should_send_item_with_email_verification(
+                item,
+                decision_cache={},
+                api_limit_reached=False,
+            )
+        )
+    finally:
+        send_queue_verification_service.verify_email_for_send = original_verify
+
+    assert should_send is True
+    assert api_limit_reached is False
+    assert reason == "http_error:ReadTimeout"
+
+
+def test_should_send_item_with_email_verification_skips_invalid_before_limit() -> None:
+    item = _queued_email(contact_id=2, email="invalid@example.com")
+
+    def _fake_verify(_email: str) -> EmailVerificationDecision:
+        return EmailVerificationDecision(
+            can_send=False,
+            api_limit_reached=False,
+            reason="safe_to_send_false",
+            provider_result="invalid",
+        )
+
+    original_verify = send_queue_verification_service.verify_email_for_send
+    send_queue_verification_service.verify_email_for_send = _fake_verify
+    try:
+        should_send, api_limit_reached, reason = (
+            send_queue_verification_service.should_send_item_with_email_verification(
+                item,
+                decision_cache={},
+                api_limit_reached=False,
+            )
+        )
+    finally:
+        send_queue_verification_service.verify_email_for_send = original_verify
+
+    assert should_send is False
+    assert api_limit_reached is False
+    assert reason == "safe_to_send_false"
+
+
 def _queued_email(contact_id: int, email: str) -> QueuedEmail:
     contact = Contact(
         first_name=f"User{contact_id}",

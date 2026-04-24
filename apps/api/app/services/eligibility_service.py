@@ -34,6 +34,9 @@ def check_eligibility(contact: Contact, db: Session, campaign_name: str) -> Elig
     if not is_valid_email(contact.email):
         return _deny(contact.id, "invalid_email")
 
+    if contact.sex not in ("homme", "femme"):
+        return _deny(contact.id, "invalid_sex")
+
     if bool(contact.is_blocked):
         return _deny(contact.id, "blocked")
 

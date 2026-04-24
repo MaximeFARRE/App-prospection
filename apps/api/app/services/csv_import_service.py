@@ -39,8 +39,8 @@ class ImportResult:
 
 # ── Alias de colonnes (anciens + nouveaux formats CSV) ───────────────────────
 
-FIRST_NAME_COLUMNS: tuple[str, ...] = ("prospect_first_name", "First Name")
-LAST_NAME_COLUMNS: tuple[str, ...] = ("prospect_last_name", "Last Name")
+FIRST_NAME_COLUMNS: tuple[str, ...] = ("prospect_first_name", "First Name", "first_name")
+LAST_NAME_COLUMNS: tuple[str, ...] = ("prospect_last_name", "Last Name", "last_name")
 FULL_NAME_COLUMNS: tuple[str, ...] = ("prospect_full_name", "Full Name")
 
 EMAIL_COLUMNS: tuple[str, ...] = (
@@ -51,12 +51,13 @@ EMAIL_COLUMNS: tuple[str, ...] = (
     "Additional Email 2",
     "Additional Email 3",
     "contact_emails",
+    "email",
 )
 
 SOURCE_PROSPECT_ID_COLUMNS: tuple[str, ...] = ("prospect_id", "Prospect ID")
 SOURCE_BUSINESS_ID_COLUMNS: tuple[str, ...] = ("business_id", "Business ID")
 
-JOB_TITLE_COLUMNS: tuple[str, ...] = ("prospect_job_title", "Title", "Headline")
+JOB_TITLE_COLUMNS: tuple[str, ...] = ("prospect_job_title", "Title", "Headline", "job")
 JOB_LEVEL_COLUMNS: tuple[str, ...] = ("prospect_job_level_main",)
 LINKEDIN_COLUMNS: tuple[str, ...] = ("prospect_linkedin", "Linkedin URL", "LinkedIn URL")
 

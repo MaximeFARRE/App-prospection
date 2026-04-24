@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 
 from sqlalchemy import func
@@ -53,19 +54,21 @@ class PrepareResult:
     stats: CampaignStats
 
 
-PERSONAL_EMAIL_DOMAINS: frozenset[str] = frozenset(
+PERSONAL_EMAIL_DOMAIN_LABELS: frozenset[str] = frozenset(
     {
-        "gmail.com",
-        "googlemail.com",
-        "outlook.com",
-        "hotmail.com",
-        "live.com",
-        "msn.com",
-        "yahoo.com",
-        "yahoo.fr",
-        "yahoo.co.uk",
+        "gmail",
+        "googlemail",
+        "outlook",
+        "hotmail",
+        "live",
+        "msn",
+        "yahoo",
+        "orange",
+        "wanadoo",
+        "free",
     }
 )
+WEEKLY_LIMIT_MESSAGE_TYPES: tuple[str, ...] = ("intro", "followup_1", "followup_2")
 
 
 # ── Point d'entrée public ─────────────────────────────────────────────────────
@@ -93,6 +96,8 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
 
     queue: list[QueuedEmail] = []
     skipped: list[EligibilityResult] = []
+    company_weekly_limit = max(0, int(settings.company_weekly_send_limit))
+    company_weekly_sent = _load_company_weekly_sent_counts(db)
 
     # Compteurs de position par (step, langue) pour la rotation round-robin
     position_counters: dict[tuple[str, str], int] = {}
@@ -102,6 +107,20 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
         if not eligibility.eligible or eligibility.next_step is None:
             skipped.append(eligibility)
             continue
+
+        company_id = getattr(contact, "company_id", None)
+        if company_weekly_limit > 0 and company_id is not None:
+            current_sent_count = company_weekly_sent.get(company_id, 0)
+            if current_sent_count >= company_weekly_limit:
+                skipped.append(
+                    EligibilityResult(
+                        contact_id=contact.id,
+                        eligible=False,
+                        reason="company_weekly_limit",
+                        next_step=None,
+                    )
+                )
+                continue
 
         step     = eligibility.next_step
         language = detect_language(contact)
@@ -127,6 +146,8 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
             )
         )
         position_counters[key] = counter + 1
+        if company_weekly_limit > 0 and company_id is not None:
+            company_weekly_sent[company_id] = company_weekly_sent.get(company_id, 0) + 1
 
     queue = _prioritize_business_emails(queue)
     stats = _compute_stats(queue, skipped, accounts)
@@ -209,6 +230,26 @@ def _load_sent_offsets(
     return {(step, lang): int(count) for step, lang, count in rows}
 
 
+def _load_company_weekly_sent_counts(db: Session) -> dict[int, int]:
+    week_start = datetime.utcnow() - timedelta(days=7)
+    rows = (
+        db.query(Contact.company_id, func.count(Message.id))
+        .join(Message, Message.contact_id == Contact.id)
+        .filter(
+            Contact.company_id.isnot(None),
+            Message.sent_at >= week_start,
+            Message.message_type.in_(WEEKLY_LIMIT_MESSAGE_TYPES),
+        )
+        .group_by(Contact.company_id)
+        .all()
+    )
+    return {
+        int(company_id): int(sent_count)
+        for company_id, sent_count in rows
+        if company_id is not None
+    }
+
+
 def _compute_stats(
     queue: list[QueuedEmail],
     skipped: list[EligibilityResult],
@@ -282,4 +323,5 @@ def _is_personal_email(email: str | None) -> bool:
         return False
 
     _, _, domain = normalized.rpartition("@")
-    return domain in PERSONAL_EMAIL_DOMAINS
+    labels = [label for label in domain.split(".") if label]
+    return any(label in PERSONAL_EMAIL_DOMAIN_LABELS for label in labels)

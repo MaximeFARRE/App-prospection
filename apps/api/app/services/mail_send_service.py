@@ -27,7 +27,8 @@ from app.models.campaign_state import CampaignState
 from app.models.message import Message
 from app.services.campaign_prepare_service import QueuedEmail
 from app.services.send_queue_verification_service import (
-    filter_send_queue_with_email_verification,
+    EmailVerificationDecision,
+    should_send_item_with_email_verification,
 )
 
 
@@ -59,21 +60,12 @@ def send_campaign(
     if not accounts:
         raise RuntimeError("Aucun compte Gmail configuré pour envoyer la campagne.")
 
-    verified_queue, removed_count = filter_send_queue_with_email_verification(queue)
-    if removed_count > 0:
-        logger.warning(
-            "Vérification email: %s contact(s) retiré(s) de la file d'envoi.",
-            removed_count,
-        )
-    queue[:] = verified_queue
-    if not queue:
-        logger.warning("Aucun email vérifié dans la file d'envoi.")
-        return SendProgress(total=0)
-
     progress = SendProgress(total=len(queue))
     service_by_email: dict[str, object] = {}
     sent_today_cache       = _build_sent_today_cache(db, accounts)
     sent_this_hour_cache   = _build_sent_this_hour_cache(db, accounts)
+    qev_decision_cache: dict[str, EmailVerificationDecision] = {}
+    qev_api_limit_reached = False
 
     for item in queue:
         if _should_stop(stop_event):
@@ -81,6 +73,22 @@ def send_campaign(
             break
 
         progress.current_contact = _format_contact_label(item)
+        should_send, qev_api_limit_reached, qev_reason = should_send_item_with_email_verification(
+            item,
+            decision_cache=qev_decision_cache,
+            api_limit_reached=qev_api_limit_reached,
+        )
+        if not should_send:
+            progress.failed += 1
+            logger.warning(
+                "Contact sauté après vérification email: contact_id=%s email=%s reason=%s",
+                item.contact.id,
+                item.contact.email,
+                qev_reason,
+            )
+            _publish_progress(progress_callback, progress)
+            continue
+
         account = _pick_available_account(
             item.account, accounts, db, sent_today_cache, sent_this_hour_cache
         )

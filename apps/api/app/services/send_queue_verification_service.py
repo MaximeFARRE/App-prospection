@@ -13,6 +13,45 @@ from app.utils.email_normalization import normalize_email
 logger = logging.getLogger(__name__)
 
 
+def should_send_item_with_email_verification(
+    item: QueuedEmail,
+    *,
+    decision_cache: dict[str, EmailVerificationDecision],
+    api_limit_reached: bool,
+) -> tuple[bool, bool, str]:
+    """Décide si un item peut être envoyé juste avant l'envoi effectif.
+
+    Retour:
+    - should_send: True si l'item doit être envoyé.
+    - api_limit_reached: état mis à jour (bypass des checks suivants).
+    - reason: raison de la décision.
+    """
+    if api_limit_reached:
+        return True, True, "api_limit_bypass"
+
+    email_raw = item.contact.email or ""
+    email_norm = normalize_email(email_raw)
+    if not email_norm:
+        return False, api_limit_reached, "invalid_or_missing_email"
+
+    decision = decision_cache.get(email_norm)
+    if decision is None:
+        decision = verify_email_for_send(email_norm)
+        decision_cache[email_norm] = decision
+
+    if decision.api_limit_reached:
+        return True, True, decision.reason
+
+    if decision.can_send:
+        return True, api_limit_reached, decision.reason
+
+    # En cas d'erreur technique API, on n'empêche pas l'envoi.
+    if _is_non_blocking_failure(decision.reason):
+        return True, api_limit_reached, decision.reason
+
+    return False, api_limit_reached, decision.reason
+
+
 def filter_send_queue_with_email_verification(
     queue: list[QueuedEmail],
 ) -> tuple[list[QueuedEmail], int]:
@@ -32,47 +71,36 @@ def filter_send_queue_with_email_verification(
     decision_cache: dict[str, EmailVerificationDecision] = {}
 
     for item in queue:
-        if api_limit_reached:
+        should_send, api_limit_reached, reason = should_send_item_with_email_verification(
+            item,
+            decision_cache=decision_cache,
+            api_limit_reached=api_limit_reached,
+        )
+        if should_send:
+            if api_limit_reached and reason != "api_limit_bypass":
+                logger.warning(
+                    "Limite QuickEmailVerification atteinte (%s). "
+                    "Vérification désactivée pour le reste de la campagne.",
+                    reason,
+                )
             filtered.append(item)
             continue
 
-        email_raw = item.contact.email or ""
-        email_norm = normalize_email(email_raw)
-        if not email_norm:
-            removed_count += 1
-            logger.warning(
-                "Contact retiré de la file (email invalide/non normalisable): contact_id=%s email=%s",
-                item.contact.id,
-                email_raw,
-            )
-            continue
-
-        decision = decision_cache.get(email_norm)
-        if decision is None:
-            decision = verify_email_for_send(email_norm)
-            decision_cache[email_norm] = decision
-
-        if decision.api_limit_reached:
-            api_limit_reached = True
-            logger.warning(
-                "Limite QuickEmailVerification atteinte (%s). "
-                "Vérification désactivée pour le reste de la campagne.",
-                decision.reason,
-            )
-            filtered.append(item)
-            continue
-
-        if not decision.can_send:
-            removed_count += 1
-            logger.warning(
-                "Contact retiré de la file après vérification email: "
-                "contact_id=%s email=%s reason=%s",
-                item.contact.id,
-                email_norm,
-                decision.reason,
-            )
-            continue
-
-        filtered.append(item)
+        removed_count += 1
+        logger.warning(
+            "Contact retiré de la file après vérification email: "
+            "contact_id=%s email=%s reason=%s",
+            item.contact.id,
+            item.contact.email,
+            reason,
+        )
 
     return filtered, removed_count
+
+
+def _is_non_blocking_failure(reason: str) -> bool:
+    if reason.startswith("http_error:"):
+        return True
+    if reason.startswith("http_status_"):
+        return True
+    return reason in {"invalid_json_response", "provider_failed"}
