@@ -86,6 +86,7 @@ class Settings(BaseSettings):
         _PROJECT_ROOT / "data" / "secure" / "quickemailverification_api_key.txt"
     )
     quickemailverification_timeout_sec: int = 10
+    email_verification_ttl_days: int = 30
 
     @field_validator("max_delay_between_sends_sec")
     @classmethod

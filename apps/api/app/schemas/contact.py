@@ -43,6 +43,9 @@ class ContactRead(ContactBase):
     """Réponse complète renvoyée par l'API."""
     id: int
     email_normalized: str | None
+    email_status: str | None
+    email_checked_at: datetime | None
+    email_check_reason: str | None
     company_id: int | None
     company: CompanyRead | None = None   # eager-loadé si besoin
     source_prospect_id: str | None

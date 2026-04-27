@@ -66,6 +66,11 @@ def send_campaign(
     sent_this_hour_cache   = _build_sent_this_hour_cache(db, accounts)
     qev_decision_cache: dict[str, EmailVerificationDecision] = {}
     qev_api_limit_reached = False
+    logger.info(
+        "Campagne '%s': vérification email en mode just_in_time "
+        "(un check juste avant chaque envoi, pas de batch global).",
+        campaign_name,
+    )
 
     for item in queue:
         if _should_stop(stop_event):
@@ -73,11 +78,24 @@ def send_campaign(
             break
 
         progress.current_contact = _format_contact_label(item)
+        logger.info(
+            "Pré-check email avant envoi: contact_id=%s email=%s step=%s",
+            item.contact.id,
+            item.contact.email,
+            item.step,
+        )
         should_send, qev_api_limit_reached, qev_reason = should_send_item_with_email_verification(
             item,
             decision_cache=qev_decision_cache,
             api_limit_reached=qev_api_limit_reached,
         )
+        logger.info(
+            "Résultat check email: contact_id=%s should_send=%s reason=%s",
+            item.contact.id,
+            should_send,
+            qev_reason,
+        )
+        _commit_contact_email_verification_if_dirty(db, item)
         if not should_send:
             progress.failed += 1
             logger.warning(
@@ -365,3 +383,17 @@ def _format_contact_label(item: QueuedEmail) -> str:
     if company_name:
         base = f"{base} ({company_name})"
     return f"{base} — {item.step}"
+
+
+def _commit_contact_email_verification_if_dirty(db: Session, item: QueuedEmail) -> None:
+    if not db.is_modified(item.contact, include_collections=False):
+        return
+    try:
+        db.commit()
+    except Exception as exc:  # pragma: no cover - dépend du backend DB
+        db.rollback()
+        logger.warning(
+            "Impossible de persister l'état de vérification email du contact_id=%s: %s",
+            item.contact.id,
+            exc,
+        )

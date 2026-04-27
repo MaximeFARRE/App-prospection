@@ -15,4 +15,7 @@ def ensure_schema_compatibility(engine: Engine) -> None:
         contact_columns = {column["name"] for column in inspector.get_columns("contacts")}
         if "sex" not in contact_columns:
             connection.execute(text("ALTER TABLE contacts ADD COLUMN sex VARCHAR(10)"))
-
+        if "email_checked_at" not in contact_columns:
+            connection.execute(text("ALTER TABLE contacts ADD COLUMN email_checked_at DATETIME"))
+        if "email_check_reason" not in contact_columns:
+            connection.execute(text("ALTER TABLE contacts ADD COLUMN email_check_reason VARCHAR(255)"))

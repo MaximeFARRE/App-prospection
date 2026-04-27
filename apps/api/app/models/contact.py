@@ -37,7 +37,9 @@ class Contact(Base):
     phone: Mapped[str | None] = mapped_column(String(50))
     linkedin_url: Mapped[str | None] = mapped_column(String(500))
     email_status: Mapped[str | None] = mapped_column(String(20))
-    # valeurs : "valid", "invalid", "unknown" — rempli depuis contact_professional_email_status
+    # valeurs : "valid", "invalid", "unknown"
+    email_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    email_check_reason: Mapped[str | None] = mapped_column(String(255))
 
     # ── Entreprise ─────────────────────────────────────────────────────────────
     company_id: Mapped[int | None] = mapped_column(
