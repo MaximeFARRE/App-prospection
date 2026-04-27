@@ -55,6 +55,8 @@ def should_send_item_with_email_verification(
         _apply_contact_email_state_from_decision(item.contact, decision, now)
         decision_cache[email_norm] = decision
 
+    _ensure_contact_is_blocked_for_invalid_decision(item.contact, decision)
+
     if decision.api_limit_reached:
         return True, True, decision.reason
 
@@ -202,6 +204,22 @@ def _apply_contact_email_state(
     contact.email_status = _normalize_email_status(status)
     contact.email_check_reason = reason[:255]
     contact.email_checked_at = checked_at
+    if _normalize_email_status(status) == "invalid":
+        # Un contact invalidé ne doit plus être envoyé automatiquement.
+        contact.is_blocked = True
+
+
+def _ensure_contact_is_blocked_for_invalid_decision(
+    contact: Contact,
+    decision: EmailVerificationDecision,
+) -> None:
+    if decision.api_limit_reached or decision.can_send:
+        return
+    if _is_non_blocking_failure(decision.reason):
+        return
+    if _normalize_email_status(contact.email_status) != "invalid":
+        return
+    contact.is_blocked = True
 
 
 def _normalize_email_status(status: str | None) -> str | None:

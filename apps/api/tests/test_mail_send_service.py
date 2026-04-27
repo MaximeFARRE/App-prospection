@@ -50,6 +50,7 @@ def test_apply_email_verification_gate_removes_unverified_and_bypasses_after_lim
     assert [item.contact.id for item in filtered] == [2, 3]
     # Le 3e n'est pas vérifié car la limite API est atteinte sur le 2e
     assert calls == ["invalid@example.com", "limit@example.com"]
+    assert queue[0].contact.is_blocked is True
 
 
 def test_should_send_item_with_email_verification_allows_send_on_qev_http_error() -> None:
@@ -113,6 +114,7 @@ def test_should_send_item_with_email_verification_skips_invalid_before_limit() -
     assert item.contact.email_status == "invalid"
     assert item.contact.email_check_reason == "safe_to_send_false"
     assert item.contact.email_checked_at is not None
+    assert item.contact.is_blocked is True
 
 
 def test_should_send_item_with_email_verification_uses_fresh_cached_invalid_status() -> None:
@@ -151,6 +153,7 @@ def test_should_send_item_with_email_verification_uses_fresh_cached_invalid_stat
     assert api_limit_reached is False
     assert reason == "cached_status_invalid"
     assert calls == []
+    assert item.contact.is_blocked is True
 
 
 def test_should_send_item_with_email_verification_refreshes_expired_status() -> None:
