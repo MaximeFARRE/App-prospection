@@ -37,8 +37,8 @@ def verify_email_for_send(email: str) -> EmailVerificationDecision:
     - api_limit_reached=True si quota/rate-limit atteint ; dans ce cas l'appelant
       doit bypass la vérification et poursuivre les envois.
     """
-    api_key = settings.resolved_quickemailverification_api_key
-    if not api_key:
+    api_keys = settings.resolved_quickemailverification_api_keys
+    if not api_keys:
         logger.warning(
             "QuickEmailVerification non configuré (clé absente). "
             "Vérification ignorée pour %s.",
@@ -51,6 +51,33 @@ def verify_email_for_send(email: str) -> EmailVerificationDecision:
         )
 
     timeout = max(1, int(settings.quickemailverification_timeout_sec))
+    last_limit_decision: EmailVerificationDecision | None = None
+    for index, api_key in enumerate(api_keys, start=1):
+        decision = _verify_with_single_api_key(email=email, api_key=api_key, timeout=timeout)
+        if not decision.api_limit_reached:
+            return decision
+
+        last_limit_decision = decision
+        if index < len(api_keys):
+            logger.warning(
+                "Limite QuickEmailVerification atteinte avec la clé #%s, bascule vers la clé suivante.",
+                index,
+            )
+            continue
+
+    return last_limit_decision or EmailVerificationDecision(
+        can_send=True,
+        api_limit_reached=True,
+        reason="api_limit_reached_all_keys",
+    )
+
+
+def _verify_with_single_api_key(
+    *,
+    email: str,
+    api_key: str,
+    timeout: int,
+) -> EmailVerificationDecision:
     try:
         response = httpx.get(
             _QEV_VERIFY_URL,

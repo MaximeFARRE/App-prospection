@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     quickemailverification_api_key_file: str = str(
         _PROJECT_ROOT / "data" / "secure" / "quickemailverification_api_key.txt"
     )
+    # Clé secondaire utilisée en fallback quand la clé principale atteint sa limite.
+    quickemailverification_api_key_2: str = ""
+    quickemailverification_api_key_file_2: str = str(
+        _PROJECT_ROOT / "data" / "secure" / "quickemailverification_api_key_2.txt"
+    )
     quickemailverification_timeout_sec: int = 10
     email_verification_ttl_days: int = 30
 
@@ -136,11 +141,35 @@ class Settings(BaseSettings):
     @property
     def resolved_quickemailverification_api_key(self) -> str:
         """Retourne la clé QEV depuis env ou fichier sécurisé."""
-        direct_key = self.quickemailverification_api_key.strip()
-        if direct_key:
-            return direct_key
+        return self._resolve_qev_key(
+            direct_key=self.quickemailverification_api_key,
+            key_file_path=self.quickemailverification_api_key_file,
+        )
 
-        key_file = Path(self.quickemailverification_api_key_file).expanduser()
+    @property
+    def resolved_quickemailverification_api_keys(self) -> list[str]:
+        """Retourne les clés QEV configurées (primaire puis secondaire)."""
+        primary = self._resolve_qev_key(
+            direct_key=self.quickemailverification_api_key,
+            key_file_path=self.quickemailverification_api_key_file,
+        )
+        secondary = self._resolve_qev_key(
+            direct_key=self.quickemailverification_api_key_2,
+            key_file_path=self.quickemailverification_api_key_file_2,
+        )
+        keys: list[str] = []
+        for key in [primary, secondary]:
+            if key and key not in keys:
+                keys.append(key)
+        return keys
+
+    @staticmethod
+    def _resolve_qev_key(direct_key: str, key_file_path: str) -> str:
+        key = str(direct_key or "").strip()
+        if key:
+            return key
+
+        key_file = Path(key_file_path).expanduser()
         if not key_file.is_file():
             return ""
         try:
