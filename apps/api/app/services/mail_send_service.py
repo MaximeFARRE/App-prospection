@@ -51,6 +51,7 @@ def send_campaign(
     db: Session,
     campaign_name: str,
     progress_callback: Callable[[SendProgress], None] | None = None,
+    log_callback: Callable[[str], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> SendProgress:
     if not queue:
@@ -78,6 +79,7 @@ def send_campaign(
             break
 
         progress.current_contact = _format_contact_label(item)
+        previous_api_limit_state = qev_api_limit_reached
         logger.info(
             "Pré-check email avant envoi: contact_id=%s email=%s step=%s",
             item.contact.id,
@@ -88,6 +90,15 @@ def send_campaign(
             item,
             decision_cache=qev_decision_cache,
             api_limit_reached=qev_api_limit_reached,
+        )
+        _publish_log(
+            log_callback,
+            _format_email_check_log(
+                item=item,
+                should_send=should_send,
+                reason=qev_reason,
+                api_limit_already_reached=previous_api_limit_state,
+            ),
         )
         logger.info(
             "Résultat check email: contact_id=%s should_send=%s reason=%s",
@@ -363,6 +374,18 @@ def _publish_progress(
         logger.warning("progress_callback a levé une exception: %s", exc)
 
 
+def _publish_log(
+    log_callback: Callable[[str], None] | None,
+    line: str,
+) -> None:
+    if log_callback is None:
+        return
+    try:
+        log_callback(line)
+    except Exception as exc:  # pragma: no cover - dépend du callback appelant
+        logger.warning("log_callback a levé une exception: %s", exc)
+
+
 def _is_quota_error(exc: HttpError) -> bool:
     status_code = getattr(getattr(exc, "resp", None), "status", None)
     return int(status_code or 0) == 429
@@ -383,6 +406,50 @@ def _format_contact_label(item: QueuedEmail) -> str:
     if company_name:
         base = f"{base} ({company_name})"
     return f"{base} — {item.step}"
+
+
+def _format_email_check_log(
+    *,
+    item: QueuedEmail,
+    should_send: bool,
+    reason: str,
+    api_limit_already_reached: bool,
+) -> str:
+    verified = "oui"
+    validity = "inconnu"
+
+    if api_limit_already_reached or reason == "api_limit_bypass":
+        verified = "non"
+        validity = "inconnu"
+    elif reason == "invalid_or_missing_email":
+        validity = "invalide"
+    elif reason.startswith("cached_status_"):
+        cached = reason.removeprefix("cached_status_").strip().lower()
+        if cached == "valid":
+            validity = "valide"
+        elif cached == "invalid":
+            validity = "invalide"
+    elif reason in {"safe_to_send_true", "accepted_email"}:
+        validity = "valide"
+    elif reason in {"safe_to_send_false", "rejected_email", "not_verified"}:
+        validity = "invalide"
+    elif reason.startswith("http_error:") or reason.startswith("http_status_"):
+        validity = "inconnu"
+    elif reason in {"invalid_json_response", "provider_failed"}:
+        validity = "inconnu"
+    elif reason in {"api_limit_message"} or reason.startswith("api_limit_status_"):
+        validity = "inconnu"
+    elif should_send:
+        validity = "valide"
+    else:
+        validity = "invalide"
+
+    decision = "envoi autorisé" if should_send else "envoi bloqué"
+    email = item.contact.email or "(email manquant)"
+    return (
+        f"Check email {email} -> vérifié: {verified} | statut: {validity} | "
+        f"décision: {decision} | raison: {reason}"
+    )
 
 
 def _commit_contact_email_verification_if_dirty(db: Session, item: QueuedEmail) -> None:

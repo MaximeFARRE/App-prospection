@@ -53,6 +53,7 @@ class CampaignSendWorker(QThread):
                 db=db,
                 campaign_name=self.campaign_name,
                 progress_callback=_on_progress,
+                log_callback=lambda line: self.log.emit(f"{_now_hms()} {line}"),
                 stop_event=self.stop_event,
             )
             self.finished.emit({"sent": result.sent, "failed": result.failed})
@@ -65,4 +66,3 @@ class CampaignSendWorker(QThread):
 
 def _now_hms() -> str:
     return datetime.now().strftime("%H:%M:%S")
-
