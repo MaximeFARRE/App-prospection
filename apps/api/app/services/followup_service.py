@@ -22,4 +22,5 @@ def prepare_followups(campaign_name: str, db: Session, dry_run: bool = False) ->
         queue=queue,
         skipped=prepared.skipped,
         total_contacts=prepared.total_contacts,
+        stats=prepared.stats,
     )
