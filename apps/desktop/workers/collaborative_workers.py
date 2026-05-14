@@ -188,6 +188,50 @@ class ContributeContactWorker(QThread):
             db.close()
 
 
+# ── Contribution en masse ─────────────────────────────────────────────────────
+
+class BulkContributeWorker(QThread):
+    """Contribue tous les contacts locaux non encore partagés vers Supabase."""
+
+    progress = pyqtSignal(int, int)      # done, total
+    finished = pyqtSignal(int, int)      # contributed, skipped
+    error = pyqtSignal(str)
+
+    def __init__(self, user_id: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._user_id = user_id
+
+    def run(self) -> None:
+        from app.models.contact import Contact
+        from sqlalchemy import select
+
+        db = SessionLocal()
+        try:
+            contacts = db.scalars(
+                select(Contact).where(Contact.collab_is_contributed == False)  # noqa: E712
+            ).all()
+            total = len(contacts)
+            repo = _make_repo()
+            service = _make_service(repo, db, self._user_id)
+            contributed = 0
+            skipped = 0
+            for i, contact in enumerate(contacts):
+                result = service.contribute_contact(contact)
+                if result.success:
+                    contributed += 1
+                else:
+                    skipped += 1
+                self.progress.emit(i + 1, total)
+            db.commit()
+            self.finished.emit(contributed, skipped)
+        except Exception as exc:
+            logger.exception("BulkContributeWorker failed")
+            db.rollback()
+            self.error.emit(str(exc))
+        finally:
+            db.close()
+
+
 # ── Import local ──────────────────────────────────────────────────────────────
 
 class ImportUnlockedWorker(QThread):
