@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     sender_name: str = ""
 
     # ─── Pièce jointe CV ──────────────────────────────────────────────────────
-    cv_path: str = str(_PROJECT_ROOT / "data" / "Cv_maxime_farre.pdf")
+    cv_path: str = str(_PROJECT_ROOT / "data" / "cv.pdf")
 
     # ─── Limites d'envoi ───────────────────────────────────────────────────────
     daily_send_limit_per_account: int = 30
