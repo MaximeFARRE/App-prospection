@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 def _make_repo():
-    """Construit un SupabaseRepository depuis les credentials sauvegardés dans l'app."""
+    """Construit un SupabaseRepository avec la session authentifiée restaurée."""
     from supabase import create_client
     from app.repositories.supabase_repository import SupabaseRepository
-    from services.settings_service import get_supabase_credentials
+    from services.settings_service import get_supabase_credentials, get_supabase_session
 
     creds = get_supabase_credentials()
     url = creds.get("supabase_url", "")
@@ -28,6 +28,16 @@ def _make_repo():
             "Renseignez-les dans Paramètres → Base collaborative."
         )
     client = create_client(url, key)
+
+    session = get_supabase_session()
+    access_token = session.get("access_token", "")
+    refresh_token = session.get("refresh_token", "")
+    if access_token and refresh_token:
+        try:
+            client.auth.set_session(access_token, refresh_token)
+        except Exception:
+            logger.warning("Impossible de restaurer la session Supabase — reconnectez-vous.")
+
     return SupabaseRepository(client)
 
 
@@ -63,6 +73,11 @@ class SupabaseSignUpWorker(QThread):
             repo = _make_repo()
             result = repo.sign_up(self._email, self._password)
             if result:
+                access = result.get("access_token") or ""
+                refresh = result.get("refresh_token") or ""
+                if access and refresh:
+                    from services.settings_service import save_supabase_session
+                    save_supabase_session(access, refresh)
                 self.signup_success.emit(result["user_id"], result["user_email"])
             else:
                 self.signup_failed.emit("Création de compte échouée — email déjà utilisé ?")
@@ -89,6 +104,11 @@ class SupabaseLoginWorker(QThread):
             repo = _make_repo()
             result = repo.login(self._email, self._password)
             if result:
+                access = result.get("access_token") or ""
+                refresh = result.get("refresh_token") or ""
+                if access and refresh:
+                    from services.settings_service import save_supabase_session
+                    save_supabase_session(access, refresh)
                 self.login_success.emit(result["user_id"], result["user_email"])
             else:
                 self.login_failed.emit("Email ou mot de passe incorrect")
