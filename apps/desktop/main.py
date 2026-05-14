@@ -18,12 +18,18 @@ from app.db.session import engine         # noqa: E402
 from services.settings_service import apply_runtime_overrides  # noqa: E402
 from views.main_window import MainWindow  # noqa: E402
 
-_LOG_FILE = Path(_DESKTOP_DIR) / "crash.log"
-logging.basicConfig(
-    filename=str(_LOG_FILE),
-    level=logging.ERROR,
-    format="%(asctime)s %(levelname)s %(name)s\n%(message)s\n",
-)
+_LOG_FILE = Path(_DESKTOP_DIR) / "app.log"
+
+_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+_handler.setLevel(logging.DEBUG)
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
+))
+logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().addHandler(_handler)
+# Réduire le bruit des bibliothèques tierces
+for _noisy in ("httpx", "httpcore", "urllib3", "postgrest"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 
 def _excepthook(exc_type, exc_value, exc_tb) -> None:

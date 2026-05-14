@@ -32,6 +32,9 @@ def _make_repo():
     session = get_supabase_session()
     access_token = session.get("access_token", "")
     refresh_token = session.get("refresh_token", "")
+    logger.debug("_make_repo: access_token présent=%s refresh_token présent=%s",
+                 bool(access_token), bool(refresh_token))
+
     if not access_token and not refresh_token:
         raise RuntimeError(
             "Non connecté à Supabase. "
@@ -39,7 +42,10 @@ def _make_repo():
         )
     try:
         client.auth.set_session(access_token, refresh_token)
-    except Exception:
+        user = client.auth.get_user()
+        logger.debug("_make_repo: session restaurée, user.id=%s", user.user.id if user and user.user else "?")
+    except Exception as e:
+        logger.warning("_make_repo: set_session échoué (%s) — tentative refresh", e)
         # Access token expiré — tenter un refresh via le refresh token
         try:
             refreshed = client.auth.refresh_session(refresh_token)
@@ -53,6 +59,7 @@ def _make_repo():
                     refreshed.session.access_token,
                     refreshed.session.refresh_token,
                 )
+                logger.debug("_make_repo: session rafraîchie avec succès")
             else:
                 raise RuntimeError(
                     "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
@@ -239,8 +246,8 @@ class ContributeContactWorker(QThread):
 class BulkContributeWorker(QThread):
     """Contribue tous les contacts locaux non encore partagés vers Supabase."""
 
-    progress = pyqtSignal(int, int)      # done, total
-    finished = pyqtSignal(int, int)      # contributed, skipped
+    progress = pyqtSignal(int, int)           # done, total
+    finished = pyqtSignal(int, int, str)      # contributed, skipped, diagnostic
     error = pyqtSignal(str)
 
     def __init__(self, user_id: str, limit: Optional[int] = None, parent: Optional[QWidget] = None) -> None:
@@ -260,19 +267,40 @@ class BulkContributeWorker(QThread):
             if self._limit is not None:
                 contacts = contacts[: self._limit]
             total = len(contacts)
+            logger.info("BulkContribute: %d contact(s) à traiter (limit=%s)", total, self._limit)
+
             repo = _make_repo()
             service = _make_service(repo, db, self._user_id)
             contributed = 0
             skipped = 0
+            skip_reasons: dict[str, int] = {}
+
             for i, contact in enumerate(contacts):
+                logger.debug(
+                    "Contact #%d id=%s email=%r email_status=%r score_brut=?",
+                    i + 1, contact.id, contact.email, contact.email_status,
+                )
                 result = service.contribute_contact(contact)
                 if result.success:
                     contributed += 1
+                    logger.debug("  → OK (supabase_id=%s)", result.contact_id)
                 else:
                     skipped += 1
+                    reason = result.rejection_reason or "inconnu"
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                    logger.warning(
+                        "  → SKIP id=%s email=%r raison=%r",
+                        contact.id, contact.email, reason,
+                    )
                 self.progress.emit(i + 1, total)
+
             db.commit()
-            self.finished.emit(contributed, skipped)
+            diagnostic = (
+                "; ".join(f"{r} ×{n}" for r, n in skip_reasons.items())
+                if skip_reasons else ""
+            )
+            logger.info("BulkContribute terminé: %d OK, %d ignorés. %s", contributed, skipped, diagnostic)
+            self.finished.emit(contributed, skipped, diagnostic)
         except Exception as exc:
             logger.exception("BulkContributeWorker failed")
             db.rollback()

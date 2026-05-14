@@ -144,17 +144,24 @@ class SupabaseRepository:
                 "email_hash": email_hash,
                 **{k: v for k, v in metadata.items() if k != "email"},
             }
+            logger.debug("upsert_contact: payload keys=%s", list(payload.keys()))
+            # Vérifier que le client est bien authentifié avant l'appel
+            user = self._client.auth.get_user()
+            logger.debug("upsert_contact: auth uid=%s",
+                         user.user.id if user and user.user else "AUCUN (anonyme!)")
             resp = (
                 self._client.table("contacts")
                 .upsert(payload, on_conflict="email_hash")
                 .execute()
             )
             rows = resp.data or []
+            logger.debug("upsert_contact: %d ligne(s) retournée(s)", len(rows))
             if rows:
                 return str(rows[0]["id"])
+            logger.warning("upsert_contact: réponse vide (resp=%s)", resp)
             return None
-        except Exception:
-            logger.exception("upsert_contact failed for email hash")
+        except Exception as exc:
+            logger.exception("upsert_contact failed — %s: %s", type(exc).__name__, exc)
             return None
 
     def create_contribution(self, user_id: str, contact_id: str) -> bool:
@@ -163,13 +170,15 @@ class SupabaseRepository:
         Retourne True si l'insertion a réussi, False sinon (y compris doublon).
         """
         try:
+            logger.debug("create_contribution: user=%s contact=%s", user_id, contact_id)
             self._client.table("contact_contributions").insert(
                 {"user_id": user_id, "contact_id": contact_id}
             ).execute()
             return True
-        except Exception:
+        except Exception as exc:
             logger.exception(
-                "create_contribution failed user=%s contact=%s", user_id, contact_id
+                "create_contribution failed user=%s contact=%s — %s: %s",
+                user_id, contact_id, type(exc).__name__, exc,
             )
             return False
 
