@@ -1,7 +1,8 @@
 from collections.abc import Mapping
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import exists, func, or_
+from sqlalchemy import cast, exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -242,6 +243,17 @@ def get_stats(db: Session) -> dict[str, Any]:
 
     reply_rate_percent = round((replies_total / messages_total) * 100, 2) if messages_total else 0.0
 
+    today_str = date.today().isoformat()
+    today_sends_rows = (
+        db.query(Message.from_email, func.count(Message.id))
+        .filter(func.strftime("%Y-%m-%d", Message.sent_at) == today_str)
+        .group_by(Message.from_email)
+        .all()
+    )
+    today_sends_per_account: dict[str, int] = {
+        str(email): int(count) for email, count in today_sends_rows
+    }
+
     return {
         "contacts_total": contacts_total,
         "companies_total": companies_total,
@@ -257,6 +269,7 @@ def get_stats(db: Session) -> dict[str, Any]:
         "replies_neutral": replies_neutral,
         "replies_auto": replies_auto,
         "replies_unknown": replies_unknown,
+        "today_sends_per_account": today_sends_per_account,
         "email_status": {
             "valid": _count_email_status(db, "valid"),
             "invalid": _count_email_status(db, "invalid"),

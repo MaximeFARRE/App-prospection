@@ -103,6 +103,9 @@ class DashboardView(QWidget):
             ("replies_total", "Réponses reçues"),
             ("reply_rate_percent", "Taux de réponse"),
             ("contacts_blocked", "Contacts bloqués"),
+            ("replies_positive", "Réponses positives"),
+            ("replies_negative", "Réponses négatives"),
+            ("replies_neutral", "Réponses neutres"),
         ]
 
         for index, (key, label) in enumerate(card_definitions):
@@ -113,6 +116,19 @@ class DashboardView(QWidget):
             grid.addWidget(card, row, column)
 
         root.addLayout(grid)
+
+        today_title = QLabel("Envois du jour par compte")
+        today_title.setStyleSheet("color: #0f172a; font-size: 16px; font-weight: 600;")
+        root.addWidget(today_title)
+
+        self._today_sends_label = QLabel("-")
+        self._today_sends_label.setStyleSheet(
+            "background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; "
+            "padding: 8px; font-size: 12px; color: #334155;"
+        )
+        self._today_sends_label.setWordWrap(True)
+        root.addWidget(self._today_sends_label)
+
         root.addStretch(1)
 
     def _load_stats(self) -> None:
@@ -142,6 +158,16 @@ class DashboardView(QWidget):
         self._cards["replies_total"].set_value(_format_int(stats.get("replies_total")))
         self._cards["reply_rate_percent"].set_value(_format_percent(stats.get("reply_rate_percent")))
         self._cards["contacts_blocked"].set_value(_format_int(stats.get("contacts_blocked")))
+        self._cards["replies_positive"].set_value(_format_int(stats.get("replies_positive")))
+        self._cards["replies_negative"].set_value(_format_int(stats.get("replies_negative")))
+        self._cards["replies_neutral"].set_value(_format_int(stats.get("replies_neutral")))
+
+        today_sends = dict(stats.get("today_sends_per_account") or {})
+        if today_sends:
+            parts = [f"{email}: {count}" for email, count in sorted(today_sends.items())]
+            self._today_sends_label.setText("  ·  ".join(parts))
+        else:
+            self._today_sends_label.setText("Aucun envoi aujourd'hui.")
 
         self._status_label.setText("Statistiques à jour.")
 
