@@ -14,12 +14,20 @@ logger = logging.getLogger(__name__)
 
 
 def _make_repo():
-    """Construit un SupabaseRepository à partir de la config .env."""
+    """Construit un SupabaseRepository depuis les credentials sauvegardés dans l'app."""
     from supabase import create_client
-    from app.core.config import supabase_settings
     from app.repositories.supabase_repository import SupabaseRepository
+    from services.settings_service import get_supabase_credentials
 
-    client = create_client(supabase_settings.supabase_url, supabase_settings.supabase_anon_key)
+    creds = get_supabase_credentials()
+    url = creds.get("supabase_url", "")
+    key = creds.get("supabase_anon_key", "")
+    if not url or not key:
+        raise RuntimeError(
+            "URL ou clé Supabase manquante. "
+            "Renseignez-les dans Paramètres → Base collaborative."
+        )
+    client = create_client(url, key)
     return SupabaseRepository(client)
 
 
