@@ -25,3 +25,85 @@ est uniquement nécessaire si vous voulez activer le mode collaboratif.
 > **Ordre d'exécution :** le script crée d'abord les tables, puis les index,
 > puis active le RLS et crée les policies. L'ordre est important — ne pas
 > l'exécuter en morceaux.
+
+---
+
+## 3. Récupérer les clés API
+
+1. Dans le tableau de bord, aller dans **Project Settings** → **API**
+2. Copier les valeurs suivantes :
+
+| Clé | Emplacement dans l'interface | Usage |
+|---|---|---|
+| `Project URL` | Section *Project URL* | `SUPABASE_URL` |
+| `anon public` | Section *Project API keys* | `SUPABASE_ANON_KEY` |
+
+> **Ne jamais copier la `service_role` key** dans `.env` — elle bypasse le RLS
+> et ne doit être utilisée que dans des Edge Functions côté serveur.
+
+---
+
+## 4. Configurer le `.env`
+
+Ajouter ces deux lignes dans votre `.env` (en vous appuyant sur `.env.example`) :
+
+```dotenv
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Vérifier que `.env` est bien dans `.gitignore` avant de committer.
+
+---
+
+## 5. Créer le premier utilisateur
+
+Le mode collaboratif utilise l'authentification Supabase intégrée (email + mot de passe).
+
+1. Dans le tableau de bord → **Authentication** → **Users** → **Add user**
+2. Saisir un email et un mot de passe
+3. L'utilisateur peut maintenant se connecter depuis l'onglet **Paramètres** de l'application
+
+> Pour permettre l'inscription libre (sans invitation admin), aller dans
+> **Authentication** → **Providers** → **Email** et activer *Enable email confirmations*
+> selon vos besoins.
+
+---
+
+## 6. Activer le mode collaboratif dans l'application
+
+1. Lancer l'application desktop
+2. Aller dans **Paramètres** → section **Base collaborative**
+3. Cocher **Activer le mode collaboratif**
+4. Saisir l'email et le mot de passe Supabase → cliquer **Connexion**
+5. Le statut passe à `● Connecté` et l'onglet **Collaboratif** apparaît dans la sidebar
+
+---
+
+## 7. Vérification post-déploiement
+
+```bash
+# Depuis la racine du projet
+pytest apps/api/tests/test_supabase_repository.py -v   # tests mockés (pas de réseau)
+pytest apps/api/tests/ -v                              # suite complète
+```
+
+Vérifications manuelles :
+- [ ] L'app se lance sans `SUPABASE_URL` dans `.env` → comportement solo inchangé
+- [ ] Avec `SUPABASE_URL` mais toggle OFF → aucun appel réseau
+- [ ] Toggle ON + connexion réussie → crédits affichés dans l'onglet Collaboratif
+- [ ] `grep -r "SUPABASE_" . --include="*.py"` → résultats uniquement dans `config.py` et `supabase_repository.py`
+
+---
+
+## Schéma relationnel
+
+```
+users ──< contact_contributions >── contacts
+users ──< contact_unlocks       >── contacts
+users ──< contact_events (via email_hash)
+```
+
+La colonne `email_hash` (SHA-256) est l'unique identifiant de déduplication
+cross-utilisateurs. L'email en clair n'est jamais stocké en V1 (`email_encrypted`
+est réservé à une implémentation AES côté Edge Function en V2).
