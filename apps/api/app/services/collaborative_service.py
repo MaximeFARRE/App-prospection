@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,9 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.collaborative_state import CollabUnlockedCache
 from app.models.contact import Contact
 from app.repositories.supabase_repository import SupabaseRepository
-
-if TYPE_CHECKING:
-    from app.services.contact_validation_service import ContactValidationService
+from app.services.contact_validation_service import ContactValidationService
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +34,7 @@ class CollaborativeService:
     def __init__(
         self,
         supabase_repo: SupabaseRepository,
-        contact_validation_service: "ContactValidationService",
+        contact_validation_service: ContactValidationService,
         db: Session,
         user_id: str,
         enabled: bool = False,
