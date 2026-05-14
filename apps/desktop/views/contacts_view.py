@@ -124,7 +124,7 @@ class ContactsView(QWidget):
         )
         actions_row.addWidget(self._verify_emails_button)
 
-        self._block_contact_button = QPushButton("Bloquer le contact sélectionné")
+        self._block_contact_button = QPushButton("Bloquer la sélection")
         actions_row.addWidget(self._block_contact_button)
 
         self._add_contact_button = QPushButton("Ajouter un contact")
@@ -148,7 +148,7 @@ class ContactsView(QWidget):
             ]
         )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.SelectedClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
@@ -645,26 +645,27 @@ class ContactsView(QWidget):
         self._reload_first_page()
 
     def _block_selected_contact(self) -> None:
-        row_index = self._table.currentRow()
-        if row_index < 0 or row_index >= len(self._rows):
-            QMessageBox.warning(self, "Bloquer un contact", "Sélectionne d'abord un contact dans la table.")
+        selected_row_indices = sorted({idx.row() for idx in self._table.selectionModel().selectedRows()})
+        selected_row_indices = [i for i in selected_row_indices if 0 <= i < len(self._rows)]
+
+        if not selected_row_indices:
+            QMessageBox.warning(self, "Bloquer", "Sélectionne d'abord au moins un contact dans la table.")
             return
 
-        selected_row = self._rows[row_index]
-        contact_id = int(selected_row["id"])
-        if bool(selected_row.get("is_blocked", False)):
-            QMessageBox.information(self, "Bloquer un contact", "Ce contact est déjà bloqué.")
-            return
+        contact_ids_to_block = [
+            int(self._rows[i]["id"])
+            for i in selected_row_indices
+            if not bool(self._rows[i].get("is_blocked", False))
+        ]
 
-        first_name = str(selected_row.get("first_name", "") or "").strip()
-        last_name = str(selected_row.get("last_name", "") or "").strip()
-        email = str(selected_row.get("email", "") or "").strip()
-        label = " ".join(part for part in [first_name, last_name] if part).strip() or email or f"#{contact_id}"
+        if not contact_ids_to_block:
+            QMessageBox.information(self, "Bloquer", "Tous les contacts sélectionnés sont déjà bloqués.")
+            return
 
         answer = QMessageBox.question(
             self,
-            "Bloquer un contact",
-            f"Confirmer le blocage de {label} ?",
+            "Bloquer",
+            f"Confirmer le blocage de {len(contact_ids_to_block)} contact(s) ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -672,20 +673,21 @@ class ContactsView(QWidget):
             return
 
         db = SessionLocal()
+        blocked_count = 0
         try:
-            contact = contact_repository.set_blocked(db, contact_id=contact_id, is_blocked=True)
-            if contact is None:
-                QMessageBox.warning(self, "Bloquer un contact", "Contact introuvable.")
-                return
+            for contact_id in contact_ids_to_block:
+                contact = contact_repository.set_blocked(db, contact_id=contact_id, is_blocked=True)
+                if contact is not None:
+                    blocked_count += 1
             db.commit()
         except Exception as exc:
             db.rollback()
-            QMessageBox.warning(self, "Bloquer un contact", f"Impossible de bloquer ce contact:\n{exc}")
+            QMessageBox.warning(self, "Bloquer", f"Erreur lors du blocage:\n{exc}")
             return
         finally:
             db.close()
 
-        self._status_label.setText("Contact bloqué.")
+        self._status_label.setText(f"{blocked_count} contact(s) bloqué(s).")
         self._reload_first_page()
 
 
