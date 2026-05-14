@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QWidget
@@ -9,6 +10,9 @@ from PyQt6.QtWidgets import QWidget
 from app.db.session import SessionLocal
 from app.services.campaign_prepare_service import QueuedEmail
 from app.services.mail_send_service import SendProgress, send_campaign
+
+if TYPE_CHECKING:
+    from app.services.collaborative_service import CollaborativeService
 
 
 class CampaignSendWorker(QThread):
@@ -22,11 +26,13 @@ class CampaignSendWorker(QThread):
         campaign_name: str,
         stop_event: threading.Event | None = None,
         parent: QWidget | None = None,
+        collaborative_service: Optional["CollaborativeService"] = None,
     ) -> None:
         super().__init__(parent)
         self.queue = queue
         self.campaign_name = campaign_name
         self.stop_event = stop_event or threading.Event()
+        self.collaborative_service = collaborative_service
 
     def run(self) -> None:
         db = SessionLocal()
@@ -55,6 +61,7 @@ class CampaignSendWorker(QThread):
                 progress_callback=_on_progress,
                 log_callback=lambda line: self.log.emit(f"{_now_hms()} {line}"),
                 stop_event=self.stop_event,
+                collaborative_service=self.collaborative_service,
             )
             self.finished.emit({"sent": result.sent, "failed": result.failed})
         except Exception as exc:  # pragma: no cover - sécurité UI

@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -30,6 +30,9 @@ from app.services.send_queue_verification_service import (
     EmailVerificationDecision,
     should_send_item_with_email_verification,
 )
+
+if TYPE_CHECKING:
+    from app.services.collaborative_service import CollaborativeService
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +56,7 @@ def send_campaign(
     progress_callback: Callable[[SendProgress], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
     stop_event: threading.Event | None = None,
+    collaborative_service: Optional["CollaborativeService"] = None,
 ) -> SendProgress:
     if not queue:
         return SendProgress(total=0)
@@ -135,6 +139,9 @@ def send_campaign(
             _record_sent_message(item, account, campaign_name, response.get("id"), sent_at, db)
             _upsert_campaign_state(item, account, campaign_name, sent_at, db)
             db.commit()
+
+            if collaborative_service and collaborative_service.is_enabled():
+                collaborative_service.record_send_event(item.contact.email)
 
             progress.sent += 1
             sent_today_cache[account.email]     = sent_today_cache.get(account.email, 0) + 1
