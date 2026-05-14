@@ -22,6 +22,14 @@ _LIMIT_KEYS = (
     "gmail_weight_3",
 )
 
+_DEFAULT_COLLABORATIVE: dict[str, Any] = {
+    "enabled": False,
+    "user_id": None,       # UUID Supabase de l'utilisateur connecté
+    "user_email": None,
+    "credits": 0,
+    "last_sync_at": None,
+}
+
 _CREDENTIAL_KEYS = (
     "gmail_client_id_1", "gmail_client_secret_1", "gmail_refresh_token_1", "gmail_email_1",
     "gmail_client_id_2", "gmail_client_secret_2", "gmail_refresh_token_2", "gmail_email_2",
@@ -131,6 +139,38 @@ def _load_credentials_json() -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     return raw
+
+
+def get_collaborative_config() -> dict[str, Any]:
+    """Retourne la config collaborative fusionnée avec les valeurs par défaut."""
+    payload = _load_json()
+    config = dict(_DEFAULT_COLLABORATIVE)
+    stored = payload.get("collaborative", {})
+    if isinstance(stored, dict):
+        config.update(stored)
+    return config
+
+
+def save_collaborative_config(config: dict[str, Any]) -> None:
+    """Persiste la section collaborative dans settings.json."""
+    payload = _load_json()
+    existing = payload.get("collaborative", {})
+    if isinstance(existing, dict):
+        existing.update(config)
+    else:
+        existing = dict(_DEFAULT_COLLABORATIVE)
+        existing.update(config)
+    payload["collaborative"] = existing
+    _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _SETTINGS_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def set_collaborative_enabled(value: bool) -> None:
+    """Active ou désactive le mode collaboratif."""
+    save_collaborative_config({"enabled": value})
 
 
 def _load_json() -> dict[str, Any]:
