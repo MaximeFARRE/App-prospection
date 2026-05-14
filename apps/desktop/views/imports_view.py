@@ -4,11 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QThread, Qt, pyqtSignal
-from PyQt6.QtCore import QMimeData
+from PyQt6.QtCore import QMimeData, QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -16,8 +17,10 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -120,6 +123,11 @@ class ImportsView(QWidget):
         self._refresh_button = QPushButton("Actualiser l'historique")
         self._refresh_button.clicked.connect(self._load_history)
         actions.addWidget(self._refresh_button)
+
+        help_button = QPushButton("? Colonnes acceptées")
+        help_button.setToolTip("Voir la liste des noms de colonnes CSV reconnus par l'import")
+        help_button.clicked.connect(self._show_csv_help)
+        actions.addWidget(help_button)
         actions.addStretch(1)
         root.addLayout(actions)
 
@@ -133,6 +141,15 @@ class ImportsView(QWidget):
         self._summary_label.setStyleSheet("color: #475569; font-size: 12px;")
         self._summary_label.setWordWrap(True)
         root.addWidget(self._summary_label)
+
+        self._errors_text = QTextEdit()
+        self._errors_text.setReadOnly(True)
+        self._errors_text.setFixedHeight(100)
+        self._errors_text.setStyleSheet(
+            "background: #fff1f2; color: #991b1b; font-size: 11px; border: 1px solid #fca5a5;"
+        )
+        self._errors_text.setVisible(False)
+        root.addWidget(self._errors_text)
 
         history_title = QLabel("Historique des imports")
         history_title.setStyleSheet("color: #0f172a; font-size: 16px; font-weight: 600;")
@@ -205,7 +222,77 @@ class ImportsView(QWidget):
             f"{result.error_count} erreur"
         )
         self._summary_label.setText(summary)
+
+        if result.errors:
+            self._errors_text.setPlainText("\n".join(result.errors))
+            self._errors_text.setVisible(True)
+        else:
+            self._errors_text.setVisible(False)
+
         self._load_history()
+
+    def _show_csv_help(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Colonnes CSV acceptées")
+        dialog.setMinimumWidth(640)
+        dialog.setMinimumHeight(480)
+
+        vbox = QVBoxLayout(dialog)
+        intro = QLabel(
+            "L'import reconnaît automatiquement les colonnes ci-dessous (insensible à la casse).\n"
+            "Une colonne email est <b>obligatoire</b>. Les autres champs sont optionnels."
+        )
+        intro.setWordWrap(True)
+        intro.setTextFormat(Qt.TextFormat.RichText)
+        vbox.addWidget(intro)
+
+        table = QTableWidget(0, 2)
+        table.setHorizontalHeaderLabels(["Champ", "Noms de colonnes acceptés"])
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setAlternatingRowColors(True)
+        table.setWordWrap(True)
+
+        rows = [
+            ("Prénom *", "first_name, prospect_first_name, First Name"),
+            ("Nom *", "last_name, prospect_last_name, Last Name"),
+            ("Nom complet *", "Full Name, prospect_full_name  (fallback si prénom/nom absents)"),
+            ("Email *", "email, Work Email, Personal Email, Additional Email 1/2/3,\ncontact_professions_email, contact_emails"),
+            ("Entreprise", "Company, prospect_company_name"),
+            ("Poste", "job, Title, Headline, prospect_job_title"),
+            ("Niveau poste", "prospect_job_level_main"),
+            ("Pays", "Country, prospect_country_name"),
+            ("Région", "Region, prospect_region_name"),
+            ("Ville", "City, prospect_city"),
+            ("Localisation", "Location  (format : Ville, Région, Pays)"),
+            ("Téléphone", "Phone, Phone 2/3/4, contact_mobile_phone"),
+            ("LinkedIn", "Linkedin URL, LinkedIn URL, prospect_linkedin"),
+            ("Sexe", "sex, sexe, gender, Gender, prospect_gender, contact_gender"),
+            ("Statut email", "Work Email Status, contact_professional_email_status"),
+            ("ID prospect", "Prospect ID, prospect_id"),
+            ("Site web entreprise", "Company Website, prospect_company_website"),
+            ("LinkedIn entreprise", "Company LinkedIn URL, Company Linkedin URL, prospect_company_linkedin"),
+        ]
+
+        table.setRowCount(len(rows))
+        for i, (field, cols) in enumerate(rows):
+            table.setItem(i, 0, QTableWidgetItem(field))
+            item = QTableWidgetItem(cols)
+            item.setToolTip(cols)
+            table.setItem(i, 1, item)
+        table.resizeRowsToContents()
+
+        scroll = QScrollArea()
+        scroll.setWidget(table)
+        scroll.setWidgetResizable(True)
+        vbox.addWidget(scroll)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        vbox.addWidget(buttons)
+        dialog.exec()
 
     def _set_busy_state(self, busy: bool) -> None:
         self._choose_button.setEnabled(not busy)
