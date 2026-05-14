@@ -34,6 +34,25 @@ class SupabaseRepository:
 
     # ── Authentification ──────────────────────────────────────────────────────
 
+    def sign_up(self, email: str, password: str) -> Optional[dict]:
+        """Crée un nouveau compte Supabase Auth.
+
+        Retourne {user_id, user_email} si la création réussit, None sinon.
+        Si la confirmation email est activée côté Supabase, user_id est quand
+        même retourné mais la session est inactive jusqu'à confirmation.
+        """
+        try:
+            resp = self._client.auth.sign_up({"email": email, "password": password})
+            if resp.user is None:
+                return None
+            return {
+                "user_id": str(resp.user.id),
+                "user_email": resp.user.email,
+            }
+        except Exception:
+            logger.exception("Supabase sign_up failed for %s", email)
+            return None
+
     def login(self, email: str, password: str) -> Optional[dict]:
         """Connexion Supabase. Retourne {user_id, user_email} ou None."""
         try:
