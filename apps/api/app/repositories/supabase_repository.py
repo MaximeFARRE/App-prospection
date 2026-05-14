@@ -80,6 +80,24 @@ class SupabaseRepository:
         except Exception:
             logger.exception("Supabase logout failed")
 
+    def upsert_user(self, user_id: str, email: str) -> bool:
+        """Insère ou met à jour le profil dans public.users.
+
+        À appeler juste après login ou signup afin que la FK
+        contact_contributions.user_id puisse être satisfaite.
+        Retourne True si l'opération a réussi, False sinon.
+        """
+        try:
+            self._client.table("users").upsert(
+                {"id": user_id, "email": email},
+                on_conflict="id",
+            ).execute()
+            logger.debug("upsert_user: OK user_id=%s", user_id)
+            return True
+        except Exception:
+            logger.exception("upsert_user failed for user_id=%s", user_id)
+            return False
+
     # ── Crédits ───────────────────────────────────────────────────────────────
 
     def get_user_credits(self, user_id: str) -> int:
