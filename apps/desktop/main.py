@@ -1,5 +1,8 @@
 import os
 import sys
+import traceback
+import logging
+from pathlib import Path
 
 # Rend les modules apps/api/app/* importables directement depuis le desktop
 _DESKTOP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,6 +17,23 @@ from app.db.schema_compat import ensure_schema_compatibility  # noqa: E402
 from app.db.session import engine         # noqa: E402
 from services.settings_service import apply_runtime_overrides  # noqa: E402
 from views.main_window import MainWindow  # noqa: E402
+
+_LOG_FILE = Path(_DESKTOP_DIR) / "crash.log"
+logging.basicConfig(
+    filename=str(_LOG_FILE),
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)s %(name)s\n%(message)s\n",
+)
+
+
+def _excepthook(exc_type, exc_value, exc_tb) -> None:
+    """Log unhandled exceptions to crash.log and stderr, then let Python handle them."""
+    msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logging.error("Unhandled exception:\n%s", msg)
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _excepthook
 
 
 def main() -> None:

@@ -208,6 +208,9 @@ class ImportsView(QWidget):
         self._set_busy_state(False)
         self._active_worker = None
 
+        if not error and result_obj is None:
+            error = "Erreur inconnue lors de l'import."
+
         if error:
             self._summary_label.setText(f"Échec de l'import : {error}")
             QMessageBox.critical(self, "Import CSV", f"Erreur pendant l'import:\n{error}")
