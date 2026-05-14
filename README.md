@@ -1,501 +1,231 @@
-# App Prospection
+# Prospection CRM
 
-CRM personnel de prospection pour stages et candidatures en finance.
+A personal-use desktop CRM for job prospecting via email campaigns. Manages contacts, sends personalized outreach emails through the Gmail API, tracks replies, and handles follow-ups — all from a local SQLite database with no external SaaS dependency.
 
-Objectif : centraliser tous les contacts, éviter les doublons, préparer des campagnes de mails, suivre les réponses, et connecter plus tard le système à OpenClaw.
-
----
-
-# Objectif du projet
-
-L'application doit permettre de :
-
-* importer plusieurs fichiers CSV de prospects
-* fusionner et dédupliquer les contacts
-* savoir exactement qui a déjà été contacté
-* ne jamais renvoyer un mail de présentation à la même personne
-* gérer plusieurs campagnes de prospection
-* envoyer automatiquement des mails personnalisés
-* suivre les réponses reçues
-* classer les réponses (positive, négative, neutre)
-* proposer des relances
-* être pilotée plus tard par OpenClaw
+Built for people who want to run a structured, multi-account email prospecting campaign with full control over their data.
 
 ---
 
-# Architecture générale
+## Features
 
-Le projet est séparé en trois parties :
+- **Contact management** — import from CSV, deduplicate, block contacts, view full history
+- **Email campaigns** — prepare and send intro + follow-up sequences with A/B template rotation
+- **Multi-account Gmail** — distribute sends across up to 3 Gmail accounts with configurable weights
+- **Email verification** — optional [QuickEmailVerification](https://quickemailverification.com/) integration to skip invalid addresses
+- **Reply tracking** — sync replies from Gmail, classify as positive / negative / neutral
+- **Rate limiting** — per-account daily/hourly limits, per-company weekly caps, randomized delays
+- **CV attachment** — optionally attach a PDF to every outreach email
+- **Bilingual templates** — language auto-detected per contact (French / English)
 
-```text
+---
+
+## Architecture
+
+```
 apps/
-├─ web/     → interface React
-└─ api/     → backend Python / FastAPI
-```
+├── api/              FastAPI backend + SQLAlchemy (SQLite)
+│   ├── app/
+│   │   ├── api/          HTTP routes (thin — validation + service call only)
+│   │   ├── core/         Settings loaded from .env via pydantic-settings
+│   │   ├── models/       SQLAlchemy ORM models
+│   │   ├── repositories/ Database query layer
+│   │   ├── schemas/      Pydantic request/response schemas
+│   │   └── services/     Business logic
+│   ├── alembic/          Database migrations
+│   └── tests/
+└── desktop/          PyQt6 GUI — talks to the API over localhost
+    ├── views/        Full-screen views (contacts, campaigns, replies, settings…)
+    ├── widgets/      Dialogs and reusable components
+    └── workers/      QThread workers for non-blocking API calls
 
-L'application utilise :
+data/
+├── templates/    Markdown email templates (see Template Format below)
+├── imports/      CSV files to import — gitignored
+├── exports/      Output CSVs — gitignored
+└── secure/       Plain-text API key files — gitignored
 
-* React + TypeScript + Vite pour l'interface
-* FastAPI + SQLAlchemy pour le backend
-* SQLite au début
-* Gmail API pour envoyer et lire les mails
-* Plus tard : OpenClaw branché sur les endpoints du backend
-
----
-
-# Arborescence prévue
-
-```text
-App prospection/
-├─ apps/
-│  ├─ api/
-│  │  ├─ app/
-│  │  │  ├─ api/
-│  │  │  ├─ core/
-│  │  │  ├─ db/
-│  │  │  ├─ models/
-│  │  │  ├─ repositories/
-│  │  │  ├─ schemas/
-│  │  │  ├─ services/
-│  │  │  └─ utils/
-│  │  └─ tests/
-│  └─ web/
-│     └─ src/
-├─ data/
-│  ├─ imports/
-│  ├─ exports/
-│  └─ app.db
-├─ docs/
-├─ scripts/
-├─ packages/
-└─ README.md
+scripts/          Utility scripts (Gmail OAuth setup, alias check, test send…)
+docs/             Architecture notes and API contract
 ```
 
 ---
 
-# Comptes mail utilisés
+## Prerequisites
 
-Deux boîtes mail sont utilisées pour répartir les envois et éviter les limites / le spam.
-
-## Boîte 1
-
-* Adresse : `maxime.farre8@gmail.com`
-* Utilisation : envois secondaires, récupération historique, secours
-
-## Boîte 2
-
-* Adresse : `maxime@maxime-farre.xyz`
-* Utilisation : envois principaux et image professionnelle
-* Cette adresse est connectée à Gmail
-
-Les deux boîtes doivent être configurées dans Gmail avec SMTP + Gmail API.
+- **Python 3.11+**
+- A **Google Cloud project** with the Gmail API enabled and an OAuth 2.0 Desktop client (see [Gmail OAuth Setup](#gmail-oauth-setup))
+- *(Optional)* A [QuickEmailVerification](https://quickemailverification.com/) API key for email address validation
 
 ---
 
-# Règles importantes
+## Installation
 
-1. Un contact est unique principalement grâce à son email.
-2. Si deux lignes ont le même email, elles représentent le même contact.
-3. Si aucun email n'existe, on tente une déduplication avec :
+```bash
+# 1. Clone the repository
+git clone https://github.com/MaximeFARRE/App-prospection.git
+cd App-prospection
 
-   * prénom
-   * nom
-   * entreprise
-4. Un mail de présentation ne peut jamais être envoyé deux fois au même contact.
-5. Si un contact a répondu, aucune relance automatique n'est envoyée.
-6. Si une adresse rebondit ou est invalide, elle est bloquée.
-7. Toutes les actions importantes doivent être enregistrées.
-
----
-
-# Base de données prévue
-
-## Table contacts
-
-Contient les informations de base :
-
-* prénom
-* nom
-* email
-* entreprise
-* poste
-* source
-* lien LinkedIn
-* notes
-
-## Table campaign_states
-
-Contient l'état du contact dans une campagne :
-
-* premier mail envoyé ou non
-* relance 1 envoyée ou non
-* relance 2 envoyée ou non
-* réponse reçue
-* sentiment de la réponse
-* contact bloqué
-
-## Table messages
-
-Historique détaillé de tous les mails envoyés.
-
-## Table replies
-
-Historique détaillé des réponses reçues.
-
-## Table imports
-
-Historique des CSV importés.
-
----
-
-# Scripts à développer
-
-Tous les scripts devront être placés dans :
-
-```text
-apps/api/app/services/
-```
-
-ou dans :
-
-```text
-scripts/
-```
-
-pour les scripts manuels.
-
----
-
-# 1. Script d'import des CSV
-
-Fichier prévu :
-
-```text
-apps/api/app/services/csv_import_service.py
-```
-
-Fonction :
-
-* lire plusieurs fichiers CSV
-* détecter les colonnes
-* normaliser les données
-* enregistrer les contacts dans la base
-* ignorer les doublons
-
-Entrées possibles :
-
-* prénom
-* nom
-* email
-* entreprise
-* poste
-* lien LinkedIn
-
----
-
-# 2. Script de déduplication
-
-Fichier prévu :
-
-```text
-apps/api/app/services/dedupe_service.py
-```
-
-Fonction :
-
-* fusionner les doublons
-* détecter les contacts déjà connus
-* marquer les cas ambigus
-
----
-
-# 3. Script pour récupérer tous les contacts déjà contactés
-
-Fichier prévu :
-
-```text
-apps/api/app/services/gmail_sent_contacts_service.py
-```
-
-Objectif :
-
-Parcourir les mails envoyés dans Gmail et récupérer la liste de tous les destinataires déjà contactés.
-
-Le script doit :
-
-* se connecter aux deux comptes Gmail
-* lire tous les mails envoyés (`in:sent`)
-* récupérer les champs `To` et `Cc`
-* fusionner les emails uniques
-* stocker le résultat dans la base de données
-* marquer automatiquement les contacts déjà contactés
-
-Sortie prévue :
-
-```text
-email | dernière date | nombre de mails envoyés | boîte utilisée
-```
-
-Ce script est essentiel avant toute campagne afin d'éviter d'envoyer deux fois le même mail à la même personne.
-
----
-
-# 4. Script de préparation des campagnes
-
-Fichier prévu :
-
-```text
-apps/api/app/services/campaign_prepare_service.py
-```
-
-Fonction :
-
-* récupérer les contacts éligibles
-* exclure les contacts déjà contactés
-* choisir le template adapté
-* créer une file d'attente d'envoi
-
----
-
-# 5. Script de rendu des templates
-
-Fichier prévu :
-
-```text
-apps/api/app/services/mail_render_service.py
-```
-
-Fonction :
-
-* prendre un template
-* remplacer les variables
-* générer le sujet
-* générer le corps du mail
-
-Variables possibles :
-
-* prénom
-* nom
-* entreprise
-* poste
-* campagne
-
----
-
-# 6. Script d'envoi des mails
-
-Fichier prévu :
-
-```text
-apps/api/app/services/mail_send_service.py
-```
-
-Fonction :
-
-* envoyer les mails automatiquement
-* choisir la bonne boîte mail
-* respecter une limite quotidienne
-* enregistrer le résultat dans la base
-
-Règles prévues :
-
-* 20 à 30 mails / jour / boîte au début
-* délai aléatoire entre chaque mail
-* possibilité d'utiliser alternativement :
-
-  * `maxime.farre8@gmail.com`
-  * `maxime@maxime-farre.xyz`
-
----
-
-# 7. Script de synchronisation des réponses Gmail
-
-Fichier prévu :
-
-```text
-apps/api/app/services/gmail_sync_service.py
-```
-
-Fonction :
-
-* lire les nouvelles réponses reçues
-* retrouver le contact correspondant
-* mettre à jour la base
-* classer automatiquement la réponse
-
-Classification prévue :
-
-* positive
-* négative
-* neutre
-* réponse automatique
-* à vérifier
-
----
-
-# 8. Script de classification des réponses
-
-Fichier prévu :
-
-```text
-apps/api/app/services/reply_classification_service.py
-```
-
-Fonction :
-
-* analyser le texte de la réponse
-* détecter si la réponse est positive ou négative
-* proposer une action
-
-Exemples :
-
-* “Nous serions ravis d'échanger” → positif
-* “Nous n'avons pas de besoin actuellement” → négatif
-* “Merci, je transfère à mon collègue” → neutre
-
----
-
-# 9. Script de relance
-
-Fichier prévu :
-
-```text
-apps/api/app/services/followup_service.py
-```
-
-Fonction :
-
-* trouver les contacts sans réponse
-* vérifier le délai depuis le premier mail
-* préparer une relance
-* ne jamais dépasser le nombre maximum de relances
-
----
-
-# Templates prévus
-
-Dossier :
-
-```text
-templates/
-```
-
-Templates prévus :
-
-* intro_rh_asset_management.txt
-* intro_private_equity.txt
-* intro_family_office.txt
-* intro_small_company.txt
-* followup_1.txt
-* followup_2.txt
-
----
-
-# Interface prévue
-
-L'application doit comporter une seule page avec une barre en haut :
-
-* Dashboard
-* Contacts
-* Imports
-* Campaigns
-* Replies
-* Settings
-
-## Dashboard
-
-Afficher :
-
-* nombre de contacts
-* nombre de mails envoyés
-* nombre de réponses
-* taux de réponse
-* réponses positives
-* réponses négatives
-
-## Contacts
-
-Tableau filtrable avec :
-
-* prénom
-* nom
-* entreprise
-* email
-* statut
-* dernier mail
-
-## Imports
-
-Permet d'importer des CSV.
-
-## Campaigns
-
-Permet de préparer puis envoyer une campagne.
-
-## Replies
-
-Permet de voir et classer les réponses.
-
----
-
-# Connexion future avec OpenClaw
-
-OpenClaw ne devra jamais modifier directement la base de données.
-
-OpenClaw utilisera uniquement l'API.
-
-Exemples d'actions possibles :
-
-* importer automatiquement un CSV
-* proposer une campagne
-* générer des mails personnalisés
-* analyser une réponse
-* proposer un brouillon
-
-Endpoints prévus :
-
-```text
-GET /contacts
-POST /imports/csv
-POST /campaigns/prepare
-POST /campaigns/send
-POST /replies/sync
-```
-
----
-
-# Lancement du projet
-
-## Frontend
-
-```text
-cd apps/web
-npm install
-npm run dev
-```
-
-## Backend
-
-```text
+# 2. Create and activate a virtual environment
 cd apps/api
 python -m venv .venv
+
+# Windows
 .venv\Scripts\activate
+# macOS / Linux
+# source .venv/bin/activate
+
+# 3. Install Python dependencies
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+
+# 4. Configure your environment
+cp ../../.env.example ../../.env
+# Edit .env — fill in Gmail credentials, SENDER_NAME, and optional API keys
+
+# 5. Run database migrations
+alembic upgrade head
+
+# 6. Start the backend API
+python -m uvicorn app.main:app --reload
+
+# 7. In a second terminal, start the desktop GUI
+cd ../desktop
+python main.py
 ```
+
+> The desktop app connects to `http://localhost:8000` by default. Keep both processes running.
 
 ---
 
-# Priorités de développement
+## Gmail OAuth Setup
 
-Ordre conseillé :
+The app uses the Gmail API (OAuth 2.0) instead of SMTP so it can read replies as well as send emails.
 
-1. Base SQLite + modèles
-2. Import CSV
-3. Déduplication
-4. Dashboard + liste des contacts
-5. Script de récupération des contacts déjà contactés depuis Gmail
-6. Préparation des campagnes
-7. Envoi des mails
-8. Synchronisation des réponses
-9. Connexion à OpenClaw
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or use an existing one).
+2. Enable the **Gmail API**: *APIs & Services → Library → Gmail API → Enable*.
+3. Create OAuth credentials: *APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID*.
+   - Application type: **Desktop app**
+   - Download the JSON file and save it as `credentials.json` in the repo root (already gitignored).
+4. Run the setup script for each Gmail account you want to use:
+   ```bash
+   cd apps/api
+   .venv\Scripts\python ..\..\scripts\gmail_setup.py
+   ```
+   The script opens a browser for OAuth consent. After authorization it prints the `client_id`, `client_secret`, and `refresh_token` — copy them into `.env`:
+   ```
+   GMAIL_CLIENT_ID_1=...
+   GMAIL_CLIENT_SECRET_1=...
+   GMAIL_REFRESH_TOKEN_1=...
+   GMAIL_EMAIL_1=your.account@gmail.com
+   ```
+5. Repeat for up to 3 accounts (`_1`, `_2`, `_3`). Accounts without all four fields are silently ignored.
+
+---
+
+## Template Format
+
+Templates live in `data/templates/`. Each file is a Markdown file with a `Subject:` line on the first line:
+
+```
+Subject: Your subject line here
+
+Body text with {{variables}} substituted at send time.
+```
+
+**Naming convention:** `{step}_{lang}_{variant}.md`
+
+| Part | Values | Meaning |
+|------|--------|---------|
+| `step` | `intro`, `followup_1`, `followup_2` | Position in the sequence |
+| `lang` | `fr`, `en` | Language — auto-detected from the contact's country |
+| `variant` | `a`, `b`, … | A/B variant — rotated across sends |
+
+**Available variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `{{civilite}}` | Honorific — `M.` or `Mme` based on detected gender |
+| `{{first_name}}` | Contact's first name |
+| `{{last_name}}` | Contact's last name |
+| `{{company}}` | Company name |
+| `{{sender_name}}` | Your name (from `SENDER_NAME` in `.env`) |
+| `{{sender_email}}` | The Gmail account address used for this send |
+| `{{sender_website}}` | Your website URL — add `SENDER_WEBSITE=...` to `.env` if needed |
+
+The follow-up templates are rendered in the context of the original intro thread, so recipients see a proper reply chain.
+
+---
+
+## Importing Contacts
+
+Place a CSV file in `data/imports/` and use the **Imports** tab in the GUI.
+
+The importer uses flexible column matching — these headers are recognized:
+
+```
+first_name  /  prospect_first_name
+last_name   /  prospect_last_name
+email       /  contact_professions_email
+company     /  prospect_company_name
+position    /  prospect_job_title
+country     /  prospect_country_name
+linkedin    /  linkedin_url
+sex         /  gender
+```
+
+Duplicate detection (by normalized email, then by name + company) runs automatically on import.
+
+---
+
+## Running a Campaign
+
+1. Import contacts via the **Imports** tab.
+2. Go to the **Campaigns** tab, enter a campaign name, and click **Prepare**.
+3. Review the preparation summary: contact count, language split, account distribution, estimated send duration.
+4. Click **Start** to begin sending. A real-time progress view shows each send.
+5. After sending, use **Sync Replies** in the **Replies** tab to pull new Gmail replies and auto-classify them.
+
+Contacts who have already replied, been blocked, or were contacted in a previous campaign are automatically excluded.
+
+---
+
+## Configuration Reference
+
+All settings live in `.env` (copy from `.env.example`).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GMAIL_EMAIL_N` | — | Email address for account N (N = 1, 2, 3) |
+| `GMAIL_CLIENT_ID_N` | — | OAuth client ID |
+| `GMAIL_CLIENT_SECRET_N` | — | OAuth client secret |
+| `GMAIL_REFRESH_TOKEN_N` | — | OAuth refresh token |
+| `GMAIL_WEIGHT_N` | `50` | Relative send weight for account N |
+| `SENDER_NAME` | — | Your name as it appears in the From field |
+| `CV_PATH` | `data/cv.pdf` | Path to a PDF file to attach (leave blank to disable) |
+| `DAILY_SEND_LIMIT_PER_ACCOUNT` | `30` | Max emails per account per day |
+| `HOURLY_SEND_LIMIT_PER_ACCOUNT` | `5` | Max emails per account per hour |
+| `MIN_DELAY_BETWEEN_SENDS_SEC` | `60` | Min seconds between consecutive sends |
+| `MAX_DELAY_BETWEEN_SENDS_SEC` | `180` | Max seconds between consecutive sends |
+| `COMPANY_WEEKLY_SEND_LIMIT` | `4` | Max contacts from the same company per week |
+| `QUICKEMAILVERIFICATION_API_KEY` | — | API key for email validation (optional) |
+| `EMAIL_VERIFICATION_TTL_DAYS` | `30` | Days before re-verifying an email address |
+
+---
+
+## Contributing
+
+This is personal-use software shared as a reference implementation. Contributions are welcome if they align with the architecture:
+
+- Services in `apps/api/app/services/` — business logic lives here.
+- Thin routes in `apps/api/app/api/` — routes only validate input and call a service.
+- No direct DB access from the desktop app — all reads/writes go through the API.
+- Run the test suite before opening a PR:
+  ```bash
+  cd apps/api
+  pytest
+  ```
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
