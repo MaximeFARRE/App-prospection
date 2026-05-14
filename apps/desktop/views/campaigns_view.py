@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QBrush, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -33,6 +33,12 @@ from workers.campaign_workers import CampaignSendWorker
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATES_DIR = _PROJECT_ROOT / "data" / "templates"
 _TEMPLATE_STEPS = ("intro", "followup_1", "followup_2")
+
+_STEP_COLORS: dict[str, QColor] = {
+    "intro":      QColor("#dbeafe"),  # bleu clair
+    "followup_1": QColor("#fed7aa"),  # orange clair
+    "followup_2": QColor("#fecaca"),  # rouge clair
+}
 
 
 class CampaignsView(QWidget):
@@ -188,9 +194,12 @@ class CampaignsView(QWidget):
                 item.step,
                 item.account.email,
             ]
+            step_bg = _STEP_COLORS.get(item.step)
             for column, value in enumerate(values):
                 table_item = QTableWidgetItem(value)
                 table_item.setData(0x0100, row)  # UserRole
+                if step_bg is not None:
+                    table_item.setBackground(QBrush(step_bg))
                 self._queue_table.setItem(row, column, table_item)
 
     def _populate_skipped_table(self) -> None:
