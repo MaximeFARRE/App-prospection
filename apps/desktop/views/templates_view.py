@@ -117,6 +117,11 @@ class TemplatesView(QWidget):
         self._new_btn.clicked.connect(self._new_template)
         btn_row.addWidget(self._new_btn)
 
+        self._duplicate_btn = QPushButton("Dupliquer")
+        self._duplicate_btn.setEnabled(False)
+        self._duplicate_btn.clicked.connect(self._duplicate_template)
+        btn_row.addWidget(self._duplicate_btn)
+
         self._delete_btn = QPushButton("Supprimer")
         self._delete_btn.setEnabled(False)
         self._delete_btn.setStyleSheet(
@@ -271,10 +276,12 @@ class TemplatesView(QWidget):
         if item is None:
             self._current_file = None
             self._delete_btn.setEnabled(False)
+            self._duplicate_btn.setEnabled(False)
             return
         path = Path(item.data(Qt.ItemDataRole.UserRole))
         self._current_file = path
         self._delete_btn.setEnabled(True)
+        self._duplicate_btn.setEnabled(True)
         self._load_template_file(path)
 
     def _load_template_file(self, path: Path) -> None:
@@ -382,6 +389,40 @@ class TemplatesView(QWidget):
         self._refresh_list()
         self._new_template()
 
+    def _duplicate_template(self) -> None:
+        if self._current_file is None:
+            return
+
+        source_name = self._current_file.stem
+        stem_parts = source_name.split("_")
+        if len(stem_parts) >= 3:
+            src_variant = stem_parts[-1]
+            src_lang    = stem_parts[-2]
+            src_step    = "_".join(stem_parts[:-2])
+        else:
+            src_step    = self._step_combo.currentData()
+            src_lang    = self._lang_combo.currentData()
+            src_variant = self._variant_combo.currentData()
+
+        next_variant = _find_next_variant(src_step, src_lang, src_variant)
+
+        # Charger le contenu source dans l'éditeur
+        self._load_template_file(self._current_file)
+
+        # Désélectionner le fichier source (mode "nouveau")
+        self._list.clearSelection()
+        self._current_file = None
+        self._delete_btn.setEnabled(False)
+        self._duplicate_btn.setEnabled(False)
+
+        # Configurer les combos sur la nouvelle variante
+        _set_combo(self._step_combo, src_step)
+        _set_combo(self._lang_combo, src_lang)
+        _set_combo(self._variant_combo, next_variant)
+
+        # Mettre à jour le titre de la fenêtre pour indiquer la copie
+        self._status_label_copy_hint = f"Nouveau template (depuis copie de {source_name})"
+
     def _show_preview(self) -> None:
         subject = self._subject_input.text().strip()
         body    = self._body_editor.toPlainText().strip()
@@ -443,6 +484,20 @@ def _display_name(stem: str) -> str:
         step    = "_".join(parts[:-2])
         return f"{step}  ·  {lang}  ·  variante {variant}"
     return stem
+
+
+def _find_next_variant(step: str, lang: str, source_variant: str) -> str:
+    """Retourne la première lettre de variante non utilisée pour step+lang."""
+    existing = {f.stem.split("_")[-1] for f in _TEMPLATES_DIR.glob(f"{step}_{lang}_*.md")}
+    for candidate in _VARIANTS:
+        if candidate not in existing:
+            return candidate
+    # Toutes les variantes prédéfinies sont prises : incrémenter depuis la source
+    if source_variant and len(source_variant) == 1:
+        next_char = chr(ord(source_variant) + 1)
+        if next_char not in existing:
+            return next_char
+    return _VARIANTS[-1]
 
 
 def _set_combo(combo: QComboBox, value: str) -> None:
