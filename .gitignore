@@ -62,3 +62,6 @@ data/__write_test*
 # Fichiers temporaires de tests
 apps/api/tests/.tmp/
 apps/api/tmp_*.db*
+
+# Claude Code (données internes, non versionner)
+.claude/
