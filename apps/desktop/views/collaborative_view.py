@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 from services.settings_service import get_collaborative_config, save_collaborative_config
 from workers.collaborative_workers import (
+    BulkContributeWorker,
     ImportUnlockedWorker,
     SyncCreditsWorker,
     UnlockContactsWorker,
@@ -41,6 +42,7 @@ class CollaborativeView(QWidget):
         self._credits_worker: SyncCreditsWorker | None = None
         self._unlock_worker: UnlockContactsWorker | None = None
         self._import_worker: ImportUnlockedWorker | None = None
+        self._bulk_worker: BulkContributeWorker | None = None
         self._build_ui()
 
     # ── Construction UI ───────────────────────────────────────────────────────
@@ -62,12 +64,48 @@ class CollaborativeView(QWidget):
         content.addWidget(title)
 
         content.addWidget(self._build_credits_section())
+        content.addWidget(self._build_contribute_section())
         content.addWidget(self._build_actions_section())
         content.addWidget(self._build_contacts_table())
         content.addStretch(1)
 
         scroll.setWidget(container)
         root.addWidget(scroll)
+
+    def _build_contribute_section(self) -> QGroupBox:
+        group = QGroupBox("Contribuer mes contacts")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        desc = QLabel(
+            "Partage tes contacts locaux avec la base collaborative. "
+            "Seuls les contacts non encore partagés et suffisamment qualifiés sont envoyés."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(desc)
+
+        btn_row = QHBoxLayout()
+        self._contribute_btn = QPushButton("Contribuer mes contacts")
+        self._contribute_btn.setFixedWidth(200)
+        self._contribute_btn.clicked.connect(self._bulk_contribute)
+        btn_row.addWidget(self._contribute_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._contribute_progress = QProgressBar()
+        self._contribute_progress.setRange(0, 1)
+        self._contribute_progress.setValue(0)
+        self._contribute_progress.setFormat("%v / %m contacts traités")
+        self._contribute_progress.setVisible(False)
+        layout.addWidget(self._contribute_progress)
+
+        self._contribute_status = QLabel("")
+        self._contribute_status.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(self._contribute_status)
+
+        return group
 
     def _build_credits_section(self) -> QGroupBox:
         group = QGroupBox("Crédits")
@@ -136,6 +174,49 @@ class CollaborativeView(QWidget):
         layout.addWidget(self._table)
 
         return group
+
+    # ── Contribution en masse ─────────────────────────────────────────────────
+
+    def _bulk_contribute(self) -> None:
+        if self._bulk_worker and self._bulk_worker.isRunning():
+            return
+        cfg = get_collaborative_config()
+        user_id = cfg.get("user_id")
+        if not user_id:
+            QMessageBox.warning(self, "Non connecté", "Connectez-vous dans les paramètres.")
+            return
+        self._contribute_btn.setEnabled(False)
+        self._contribute_progress.setValue(0)
+        self._contribute_progress.setVisible(True)
+        self._contribute_status.setText("Contribution en cours…")
+        worker = BulkContributeWorker(str(user_id), self)
+        worker.progress.connect(self._on_contribute_progress)
+        worker.finished.connect(self._on_contribute_done)
+        worker.error.connect(self._on_contribute_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._bulk_worker = worker
+        worker.start()
+
+    def _on_contribute_progress(self, done: int, total: int) -> None:
+        self._contribute_progress.setRange(0, max(total, 1))
+        self._contribute_progress.setValue(done)
+
+    def _on_contribute_done(self, contributed: int, skipped: int) -> None:
+        self._bulk_worker = None
+        self._contribute_btn.setEnabled(True)
+        self._contribute_progress.setVisible(False)
+        self._contribute_status.setText(
+            f"{contributed} contact(s) partagés, {skipped} ignorés (qualité insuffisante ou déjà partagés)."
+        )
+        self._contribute_status.setStyleSheet("color: #16a34a;")
+
+    def _on_contribute_error(self, message: str) -> None:
+        self._bulk_worker = None
+        self._contribute_btn.setEnabled(True)
+        self._contribute_progress.setVisible(False)
+        self._contribute_status.setText(f"Erreur : {message}")
+        self._contribute_status.setStyleSheet("color: #dc2626;")
 
     # ── Rafraîchissement au focus ─────────────────────────────────────────────
 
