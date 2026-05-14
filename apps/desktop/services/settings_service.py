@@ -187,6 +187,23 @@ def save_supabase_credentials(url: str, anon_key: str) -> None:
     save_credentials({"supabase_url": url, "supabase_anon_key": anon_key})
 
 
+def save_supabase_session(access_token: str, refresh_token: str) -> None:
+    """Persiste le JWT de l'utilisateur connecté pour les workers suivants."""
+    save_credentials({
+        "supabase_access_token": access_token,
+        "supabase_refresh_token": refresh_token,
+    })
+
+
+def get_supabase_session() -> dict[str, str]:
+    """Retourne {access_token, refresh_token} depuis credentials.json."""
+    creds = _load_credentials_json()
+    return {
+        "access_token": creds.get("supabase_access_token", ""),
+        "refresh_token": creds.get("supabase_refresh_token", ""),
+    }
+
+
 def _load_json() -> dict[str, Any]:
     if not _SETTINGS_PATH.exists():
         return {}
