@@ -69,8 +69,8 @@ Tableau filtrable :
 
 | Boîte | Adresse | Usage |
 |-------|---------|-------|
-| Compte 1 | `maxime.farre8@gmail.com` | Envois secondaires, secours |
-| Compte 2 | `maxime@maxime-farre.xyz` | Envois principaux, image pro |
+| Compte 1 | `account1@gmail.com` | Envois secondaires, secours |
+| Compte 2 | `account2@gmail.com` | Envois principaux, image pro |
 
 ---
 
