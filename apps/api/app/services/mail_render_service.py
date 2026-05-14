@@ -19,7 +19,6 @@ _SETTINGS_PATH = _PROJECT_ROOT / "data" / "settings.json"
 
 _SUPPORTED_STEPS    = frozenset({"intro", "followup_1", "followup_2"})
 _SUPPORTED_LANGUAGES = frozenset({"fr", "en"})
-_SUPPORTED_VARIANTS  = frozenset({"a", "b"})
 
 # Noms de pays considérés comme France (langue française)
 _FRANCE_COUNTRY_NAMES = frozenset({"france", "fr", "fra"})
@@ -159,10 +158,10 @@ def _validate_language(language: str) -> None:
 
 
 def _validate_variant(ab_variant: str) -> None:
-    if ab_variant not in _SUPPORTED_VARIANTS:
+    if not re.match(r"^[a-z]$", ab_variant):
         raise ValueError(
-            f"Variant A/B non supporté : {ab_variant!r}. "
-            f"Valeurs possibles : {sorted(_SUPPORTED_VARIANTS)}"
+            f"Variant non supporté : {ab_variant!r}. "
+            f"Doit être une lettre minuscule unique (a, b, c, ...)"
         )
 
 
@@ -189,8 +188,9 @@ def _build_variables(
         "civilite":     civilite,
         "company":      company_name,
         "job_title":    _as_text(getattr(contact, "job_title", None)),
-        "sender_name":  _load_sender_name(),
-        "sender_email": _as_text(account.email),
+        "sender_name":    _load_sender_name(),
+        "sender_email":   _as_text(account.email),
+        "sender_website": _as_text(getattr(settings, "sender_website", "")),
     }
 
 

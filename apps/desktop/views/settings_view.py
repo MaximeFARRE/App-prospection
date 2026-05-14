@@ -111,6 +111,9 @@ class SettingsView(QWidget):
         self._sender_name_input = QLineEdit()
         self._sender_name_input.setPlaceholderText("Prénom Nom")
         sender_layout.addRow("Nom expéditeur", self._sender_name_input)
+        self._sender_website_input = QLineEdit()
+        self._sender_website_input.setPlaceholderText("https://votresite.com")
+        sender_layout.addRow("Site web", self._sender_website_input)
         sender_save_btn = QPushButton("Enregistrer")
         sender_save_btn.clicked.connect(self._save_sender_credentials)
         sender_layout.addWidget(sender_save_btn)
@@ -143,6 +146,7 @@ class SettingsView(QWidget):
         self._qev_key_input.setText(creds.get("quickemailverification_api_key", ""))
         self._qev_key_2_input.setText(creds.get("quickemailverification_api_key_2", ""))
         self._sender_name_input.setText(creds.get("sender_name", ""))
+        self._sender_website_input.setText(creds.get("sender_website", ""))
 
     def _refresh_account_cards(self) -> None:
         for account_index, card in self._account_cards.items():
@@ -361,9 +365,11 @@ class SettingsView(QWidget):
 
     def _save_sender_credentials(self) -> None:
         name = self._sender_name_input.text().strip()
-        save_credentials({"sender_name": name})
+        website = self._sender_website_input.text().strip()
+        save_credentials({"sender_name": name, "sender_website": website})
         settings.sender_name = name
-        QMessageBox.information(self, "Expéditeur", "Nom d'expéditeur enregistré.")
+        settings.sender_website = website
+        QMessageBox.information(self, "Expéditeur", "Informations expéditeur enregistrées.")
 
     def _on_send_limits_changed(self) -> None:
         if self._loading_limits:

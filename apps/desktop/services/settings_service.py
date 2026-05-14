@@ -27,7 +27,7 @@ _CREDENTIAL_KEYS = (
     "gmail_client_id_2", "gmail_client_secret_2", "gmail_refresh_token_2", "gmail_email_2",
     "gmail_client_id_3", "gmail_client_secret_3", "gmail_refresh_token_3", "gmail_email_3",
     "quickemailverification_api_key", "quickemailverification_api_key_2",
-    "sender_name",
+    "sender_name", "sender_website",
 )
 
 

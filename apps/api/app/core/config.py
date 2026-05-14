@@ -58,6 +58,7 @@ class Settings(BaseSettings):
 
     # ─── Expéditeur ───────────────────────────────────────────────────────────
     sender_name: str = ""
+    sender_website: str = ""
 
     # ─── Pièce jointe CV ──────────────────────────────────────────────────────
     cv_path: str = str(_PROJECT_ROOT / "data" / "cv.pdf")
