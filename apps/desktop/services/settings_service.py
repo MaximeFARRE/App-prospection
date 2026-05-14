@@ -173,6 +173,20 @@ def set_collaborative_enabled(value: bool) -> None:
     save_collaborative_config({"enabled": value})
 
 
+def get_supabase_credentials() -> dict[str, str]:
+    """Retourne {supabase_url, supabase_anon_key} depuis credentials.json."""
+    creds = _load_credentials_json()
+    return {
+        "supabase_url": creds.get("supabase_url", ""),
+        "supabase_anon_key": creds.get("supabase_anon_key", ""),
+    }
+
+
+def save_supabase_credentials(url: str, anon_key: str) -> None:
+    """Persiste l'URL et la clé anonyme Supabase dans credentials.json."""
+    save_credentials({"supabase_url": url, "supabase_anon_key": anon_key})
+
+
 def _load_json() -> dict[str, Any]:
     if not _SETTINGS_PATH.exists():
         return {}
