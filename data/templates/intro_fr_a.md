@@ -6,7 +6,7 @@ Je me permets de vous contacter car je recherche actuellement un stage de césur
 
 Je suis étudiant en Master Ingénierie Financière et je m’intéresse particulièrement aux métiers techniques liés à la finance, à la data et à l’analyse.
 
-En dehors de mes études, je développe plusieurs projets en finance et en data ainsi qu’une entreprise familiale. Vous trouverez davantage d’informations sur mon parcours et mes projets sur maxime-farre.xyz, ainsi que mon CV en pièce jointe.
+En dehors de mes études, je développe plusieurs projets en finance et en data ainsi qu’une entreprise familiale. Vous trouverez davantage d’informations sur mon parcours et mes projets sur {{sender_website}}, ainsi que mon CV en pièce jointe.
 
 Je serais ravi d’échanger si mon profil peut vous intéresser.
 
