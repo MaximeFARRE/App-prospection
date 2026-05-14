@@ -91,6 +91,12 @@ CREATE POLICY "contacts_unlock_gate" ON public.contacts
     )
   );
 
+-- contacts : tout utilisateur authentifié peut lire les contacts
+-- Nécessaire pour que l'upsert avec RETURNING * fonctionne (PostgREST
+-- exige une policy SELECT pour renvoyer la ligne insérée/mise à jour).
+CREATE POLICY "contacts_select_authenticated" ON public.contacts
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
 -- contacts : tout utilisateur authentifié peut contribuer (insérer / mettre à jour)
 CREATE POLICY "contacts_insert_authenticated" ON public.contacts
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
