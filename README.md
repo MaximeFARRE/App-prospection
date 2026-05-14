@@ -70,7 +70,7 @@ data/
 └── app.db                  SQLite database — auto-created on first launch
 
 scripts/
-├── dev-start.ps1           Main launcher (called by Lancer l'app.bat)
+├── dev-start.ps1           Main launcher (called by launch_app.bat)
 ├── gmail_setup.py          OAuth setup wizard for each Gmail account
 └── …                       Utility scripts
 ```
@@ -106,7 +106,7 @@ copy .env.example .env
 
 ### Launch
 
-Double-click **`Lancer l'app.bat`**.
+Double-click **`launch_app.bat`**.
 
 On the first run the launcher will:
 1. Create the Python virtual environment automatically (`apps/api/.venv`).
