@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
 
 from app.core.config import GmailAccount, settings
 from services.gmail_setup_service import launch_gmail_setup
-from services.settings_service import get_settings, save_settings
+from services.settings_service import get_settings, load_credentials, save_credentials, save_settings
 from widgets.settings_widgets import AccountCard, SendLimitsSection, SyncSection
 from workers.settings_workers import GmailConnectionWorker, GmailSyncWorker
 
@@ -85,6 +86,36 @@ class SettingsView(QWidget):
         self._send_limits_section.weight_2_spin.valueChanged.connect(self._on_send_limits_changed)
         self._send_limits_section.weight_3_spin.valueChanged.connect(self._on_send_limits_changed)
         content.addWidget(self._send_limits_section)
+
+        qev_group = QGroupBox("Vérification email (QuickEmailVerification)")
+        qev_layout = QFormLayout(qev_group)
+        qev_layout.setContentsMargins(12, 12, 12, 12)
+        qev_layout.setSpacing(8)
+        self._qev_key_input = QLineEdit()
+        self._qev_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._qev_key_input.setPlaceholderText("Clé API principale")
+        qev_layout.addRow("Clé primaire", self._qev_key_input)
+        self._qev_key_2_input = QLineEdit()
+        self._qev_key_2_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._qev_key_2_input.setPlaceholderText("Clé API secondaire (optionnel)")
+        qev_layout.addRow("Clé secondaire", self._qev_key_2_input)
+        qev_save_btn = QPushButton("Enregistrer les clés QEV")
+        qev_save_btn.clicked.connect(self._save_qev_credentials)
+        qev_layout.addWidget(qev_save_btn)
+        content.addWidget(qev_group)
+
+        sender_group = QGroupBox("Expéditeur")
+        sender_layout = QFormLayout(sender_group)
+        sender_layout.setContentsMargins(12, 12, 12, 12)
+        sender_layout.setSpacing(8)
+        self._sender_name_input = QLineEdit()
+        self._sender_name_input.setPlaceholderText("Prénom Nom")
+        sender_layout.addRow("Nom expéditeur", self._sender_name_input)
+        sender_save_btn = QPushButton("Enregistrer")
+        sender_save_btn.clicked.connect(self._save_sender_credentials)
+        sender_layout.addWidget(sender_save_btn)
+        content.addWidget(sender_group)
+
         content.addStretch(1)
 
         scroll.setWidget(container)
@@ -107,6 +138,11 @@ class SettingsView(QWidget):
         self._loading_limits = False
 
         self._refresh_last_sync_label(persisted.get("last_gmail_sync_at"))
+
+        creds = load_credentials()
+        self._qev_key_input.setText(creds.get("quickemailverification_api_key", ""))
+        self._qev_key_2_input.setText(creds.get("quickemailverification_api_key_2", ""))
+        self._sender_name_input.setText(creds.get("sender_name", ""))
 
     def _refresh_account_cards(self) -> None:
         for account_index, card in self._account_cards.items():
@@ -157,54 +193,101 @@ class SettingsView(QWidget):
         account = self._get_account(account_index)
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Reconfigurer le compte Gmail {account_index}")
+        dialog.setMinimumWidth(480)
         form = QFormLayout(dialog)
+        form.setSpacing(10)
 
         client_id_input = QLineEdit(account.client_id)
         client_secret_input = QLineEdit(account.client_secret)
         client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
+        email_input = QLineEdit(account.email)
+        email_input.setPlaceholderText("votre.adresse@gmail.com")
+        refresh_token_input = QLineEdit(account.refresh_token)
+        refresh_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        refresh_token_input.setPlaceholderText("Colle ici le refresh_token après l'auth Google")
         label_input = QLineEdit(str(account_index))
-        form.addRow("Client ID", client_id_input)
-        form.addRow("Client Secret", client_secret_input)
+
+        form.addRow("Client ID *", client_id_input)
+        form.addRow("Client Secret *", client_secret_input)
+        form.addRow("Adresse Gmail *", email_input)
+        form.addRow("Refresh Token", refresh_token_input)
         form.addRow("Account label", label_input)
+
+        hint = QLabel(
+            "Si vous n'avez pas encore de refresh_token, laissez ce champ vide\n"
+            "et cliquez sur « Lancer l'auth Google » pour en obtenir un."
+        )
+        hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        hint.setWordWrap(True)
+        form.addWidget(hint)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
         )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Lancer la configuration")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Enregistrer")
         form.addWidget(buttons)
+
+        auth_btn = QPushButton("Lancer l'auth Google (obtenir un refresh_token)")
+        form.addWidget(auth_btn)
 
         def _submit() -> None:
             if not client_id_input.text().strip() or not client_secret_input.text().strip():
                 QMessageBox.warning(dialog, "Champs obligatoires", "Client ID et Client Secret sont requis.")
                 return
+            if not email_input.text().strip():
+                QMessageBox.warning(dialog, "Champs obligatoires", "L'adresse Gmail est requise.")
+                return
             dialog.accept()
+
+        def _launch_auth() -> None:
+            cid = client_id_input.text().strip()
+            csecret = client_secret_input.text().strip()
+            if not cid or not csecret:
+                QMessageBox.warning(dialog, "Champs obligatoires", "Client ID et Client Secret sont requis avant de lancer l'auth.")
+                return
+            alabel = label_input.text().strip() or str(account_index)
+            try:
+                launch_gmail_setup(cid, csecret, alabel)
+            except OSError as exc:
+                QMessageBox.critical(dialog, "Erreur", f"Impossible de lancer gmail_setup.py:\n{exc}")
+                return
+            QMessageBox.information(
+                dialog,
+                "Auth Google",
+                "Le script gmail_setup.py a été lancé dans un terminal.\n"
+                "Termine l'auth Google, puis colle le refresh_token affiché dans le champ prévu.",
+            )
 
         buttons.accepted.connect(_submit)
         buttons.rejected.connect(dialog.reject)
+        auth_btn.clicked.connect(_launch_auth)
+
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         client_id = client_id_input.text().strip()
         client_secret = client_secret_input.text().strip()
-        account_label = label_input.text().strip() or str(account_index)
+        gmail_email = email_input.text().strip()
+        refresh_token = refresh_token_input.text().strip()
 
         setattr(settings, f"gmail_client_id_{account_index}", client_id)
         setattr(settings, f"gmail_client_secret_{account_index}", client_secret)
+        setattr(settings, f"gmail_email_{account_index}", gmail_email)
+        if refresh_token:
+            setattr(settings, f"gmail_refresh_token_{account_index}", refresh_token)
+
+        creds: dict[str, str] = {
+            f"gmail_client_id_{account_index}": client_id,
+            f"gmail_client_secret_{account_index}": client_secret,
+            f"gmail_email_{account_index}": gmail_email,
+        }
+        if refresh_token:
+            creds[f"gmail_refresh_token_{account_index}"] = refresh_token
+        save_credentials(creds)
+
         self._tested_accounts.pop(account_index, None)
         self._refresh_account_cards()
-
-        try:
-            launch_gmail_setup(client_id, client_secret, account_label)
-        except OSError as exc:
-            QMessageBox.critical(self, "Erreur", f"Impossible de lancer gmail_setup.py:\n{exc}")
-            return
-
-        QMessageBox.information(
-            self,
-            "Configuration Gmail",
-            "Le script gmail_setup.py a été lancé dans un terminal.\n"
-            "Termine l'auth Google, puis copie le refresh token affiché.",
-        )
+        QMessageBox.information(self, "Configuration Gmail", "Les informations du compte ont été enregistrées.")
 
     def _start_sync(self) -> None:
         if self._sync_worker is not None and self._sync_worker.isRunning():
@@ -264,6 +347,23 @@ class SettingsView(QWidget):
         except ValueError:
             formatted = str(raw_value)
         self._sync_section.last_sync_label.setText(f"Dernière sync : {formatted}")
+
+    def _save_qev_credentials(self) -> None:
+        key1 = self._qev_key_input.text().strip()
+        key2 = self._qev_key_2_input.text().strip()
+        save_credentials({
+            "quickemailverification_api_key": key1,
+            "quickemailverification_api_key_2": key2,
+        })
+        settings.quickemailverification_api_key = key1
+        settings.quickemailverification_api_key_2 = key2
+        QMessageBox.information(self, "QEV", "Clés QuickEmailVerification enregistrées.")
+
+    def _save_sender_credentials(self) -> None:
+        name = self._sender_name_input.text().strip()
+        save_credentials({"sender_name": name})
+        settings.sender_name = name
+        QMessageBox.information(self, "Expéditeur", "Nom d'expéditeur enregistré.")
 
     def _on_send_limits_changed(self) -> None:
         if self._loading_limits:
