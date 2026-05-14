@@ -131,7 +131,7 @@ class ContactsView(QWidget):
         )
         actions_row.addWidget(self._reverify_emails_button)
 
-        self._block_contact_button = QPushButton("Bloquer la sélection")
+        self._block_contact_button = QPushButton("Bloquer / Débloquer")
         actions_row.addWidget(self._block_contact_button)
 
         self._add_contact_button = QPushButton("Ajouter un contact")
@@ -682,45 +682,60 @@ class ContactsView(QWidget):
         selected_row_indices = [i for i in selected_row_indices if 0 <= i < len(self._rows)]
 
         if not selected_row_indices:
-            QMessageBox.warning(self, "Bloquer", "Sélectionne d'abord au moins un contact dans la table.")
+            QMessageBox.warning(self, "Bloquer / Débloquer", "Sélectionne d'abord au moins un contact dans la table.")
             return
 
-        contact_ids_to_block = [
-            int(self._rows[i]["id"])
-            for i in selected_row_indices
-            if not bool(self._rows[i].get("is_blocked", False))
-        ]
+        all_blocked = all(bool(self._rows[i].get("is_blocked", False)) for i in selected_row_indices)
 
-        if not contact_ids_to_block:
-            QMessageBox.information(self, "Bloquer", "Tous les contacts sélectionnés sont déjà bloqués.")
-            return
-
-        answer = QMessageBox.question(
-            self,
-            "Bloquer",
-            f"Confirmer le blocage de {len(contact_ids_to_block)} contact(s) ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
+        if all_blocked:
+            # Tous bloqués → débloquer
+            contact_ids = [int(self._rows[i]["id"]) for i in selected_row_indices]
+            answer = QMessageBox.question(
+                self,
+                "Débloquer",
+                f"Débloquer {len(contact_ids)} contact(s) ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            target_blocked = False
+            verb = "débloqué"
+        else:
+            # Au moins un non-bloqué → bloquer les non-bloqués
+            contact_ids = [
+                int(self._rows[i]["id"])
+                for i in selected_row_indices
+                if not bool(self._rows[i].get("is_blocked", False))
+            ]
+            answer = QMessageBox.question(
+                self,
+                "Bloquer",
+                f"Bloquer {len(contact_ids)} contact(s) ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            target_blocked = True
+            verb = "bloqué"
 
         db = SessionLocal()
-        blocked_count = 0
+        updated_count = 0
         try:
-            for contact_id in contact_ids_to_block:
-                contact = contact_repository.set_blocked(db, contact_id=contact_id, is_blocked=True)
+            for contact_id in contact_ids:
+                contact = contact_repository.set_blocked(db, contact_id=contact_id, is_blocked=target_blocked)
                 if contact is not None:
-                    blocked_count += 1
+                    updated_count += 1
             db.commit()
         except Exception as exc:
             db.rollback()
-            QMessageBox.warning(self, "Bloquer", f"Erreur lors du blocage:\n{exc}")
+            QMessageBox.warning(self, "Bloquer / Débloquer", f"Erreur :\n{exc}")
             return
         finally:
             db.close()
 
-        self._status_label.setText(f"{blocked_count} contact(s) bloqué(s).")
+        self._status_label.setText(f"{updated_count} contact(s) {verb}(s).")
         self._reload_first_page()
 
 
