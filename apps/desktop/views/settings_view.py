@@ -35,7 +35,7 @@ from services.settings_service import (
     set_collaborative_enabled,
 )
 from widgets.settings_widgets import AccountCard, SendLimitsSection, SyncSection
-from workers.collaborative_workers import SupabaseLoginWorker, SupabaseSignUpWorker
+from workers.collaborative_workers import BulkContributeWorker, SupabaseLoginWorker, SupabaseSignUpWorker
 from workers.settings_workers import GmailConnectionWorker, GmailSyncWorker
 
 
@@ -53,6 +53,7 @@ class SettingsView(QWidget):
         self._sync_worker: GmailSyncWorker | None = None
         self._login_worker: SupabaseLoginWorker | None = None
         self._signup_worker: SupabaseSignUpWorker | None = None
+        self._bulk_worker: BulkContributeWorker | None = None
         self._sync_logs: list[str] = []
         self._loading_limits = False
 
@@ -539,6 +540,7 @@ class SettingsView(QWidget):
         save_collaborative_config({"user_id": user_id, "user_email": user_email, "credits": 0})
         self._refresh_collab_status()
         QMessageBox.information(self, "Base collaborative", f"Connecté en tant que {user_email}")
+        self._start_bulk_contribute(user_id)
 
     def _on_login_failed(self, message: str) -> None:
         self._login_worker = None
@@ -576,12 +578,30 @@ class SettingsView(QWidget):
             f"Compte créé et connecté en tant que {user_email}.\n"
             "Vous pouvez maintenant utiliser la base collaborative.",
         )
+        self._start_bulk_contribute(user_id)
 
     def _on_signup_failed(self, message: str) -> None:
         self._signup_worker = None
         self._collab_signup_btn.setEnabled(True)
         self._collab_status_label.setText(f"Échec : {message}")
         self._collab_status_label.setStyleSheet("color: #dc2626;")
+
+    def _start_bulk_contribute(self, user_id: str) -> None:
+        if self._bulk_worker and self._bulk_worker.isRunning():
+            return
+        worker = BulkContributeWorker(user_id, self)
+        worker.finished.connect(self._on_bulk_contribute_done)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._bulk_worker = worker
+        worker.start()
+
+    def _on_bulk_contribute_done(self, contributed: int, skipped: int) -> None:
+        self._bulk_worker = None
+        if contributed:
+            self._collab_status_label.setText(
+                f"● Connecté — {contributed} contact(s) partagés avec la base collaborative"
+            )
 
     def _on_send_limits_changed(self) -> None:
         if self._loading_limits:
