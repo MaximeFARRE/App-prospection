@@ -206,10 +206,15 @@ class CollaborativeView(QWidget):
         self._bulk_worker = None
         self._contribute_btn.setEnabled(True)
         self._contribute_progress.setVisible(False)
-        self._contribute_status.setText(
-            f"{contributed} contact(s) partagés, {skipped} ignorés (qualité insuffisante ou déjà partagés)."
-        )
-        self._contribute_status.setStyleSheet("color: #16a34a;")
+        parts = []
+        if contributed:
+            parts.append(f"{contributed} contact(s) partagés avec succès")
+        if skipped:
+            parts.append(f"{skipped} ignorés (email manquant ou score < 40 pts)")
+        if not contributed and not skipped:
+            parts.append("Aucun nouveau contact à partager")
+        self._contribute_status.setText(". ".join(parts) + ".")
+        self._contribute_status.setStyleSheet("color: #16a34a;" if contributed else "color: #64748b;")
 
     def _on_contribute_error(self, message: str) -> None:
         self._bulk_worker = None

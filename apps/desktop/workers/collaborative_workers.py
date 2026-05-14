@@ -31,14 +31,14 @@ def _make_repo():
     return SupabaseRepository(client)
 
 
-def _make_service(repo, db, user_id: str):
+def _make_service(repo, db, user_id: str, contribution_threshold: int = 40):
     """Instancie un CollaborativeService activé avec injection des dépendances."""
     from app.services.collaborative_service import CollaborativeService
     from app.services.contact_validation_service import ContactValidationService
 
     return CollaborativeService(
         supabase_repo=repo,
-        contact_validation_service=ContactValidationService(),
+        contact_validation_service=ContactValidationService(threshold=contribution_threshold),
         db=db,
         user_id=user_id,
         enabled=True,
