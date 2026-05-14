@@ -30,8 +30,8 @@ PAGE_SIZE = 100
 SENTIMENT_VALUES = ("positive", "negative", "neutral", "auto", "unknown")
 
 _SENTIMENT_COLORS: dict[str, QColor] = {
-    "positive": QColor("#dcfce7"),  # vert clair
-    "negative": QColor("#fecaca"),  # rouge clair
+    "positive": QColor("#166534"),  # vert foncé
+    "negative": QColor("#991b1b"),  # rouge foncé
 }
 
 

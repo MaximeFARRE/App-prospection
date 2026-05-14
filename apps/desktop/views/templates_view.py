@@ -103,8 +103,8 @@ class TemplatesView(QWidget):
 
         self._list = QListWidget()
         self._list.setStyleSheet(
-            "QListWidget { border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; }"
-            "QListWidget::item { padding: 6px 8px; }"
+            "QListWidget { border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; color: #0f172a; }"
+            "QListWidget::item { padding: 6px 8px; color: #0f172a; }"
             "QListWidget::item:selected { background: #dbeafe; color: #1e40af; }"
         )
         self._list.currentItemChanged.connect(self._on_template_selected)
