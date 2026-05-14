@@ -43,6 +43,7 @@ class CollaborativeView(QWidget):
         self._unlock_worker: UnlockContactsWorker | None = None
         self._import_worker: ImportUnlockedWorker | None = None
         self._bulk_worker: BulkContributeWorker | None = None
+        self._bulk_sample_worker: BulkContributeWorker | None = None
         self._build_ui()
 
     # ── Construction UI ───────────────────────────────────────────────────────
@@ -91,6 +92,13 @@ class CollaborativeView(QWidget):
         self._contribute_btn.setFixedWidth(200)
         self._contribute_btn.clicked.connect(self._bulk_contribute)
         btn_row.addWidget(self._contribute_btn)
+
+        self._contribute_sample_btn = QPushButton("Contribuer 10 contacts")
+        self._contribute_sample_btn.setFixedWidth(170)
+        self._contribute_sample_btn.setToolTip("Envoie uniquement les 10 premiers contacts non encore partagés")
+        self._contribute_sample_btn.clicked.connect(self._bulk_contribute_sample)
+        btn_row.addWidget(self._contribute_sample_btn)
+
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -178,7 +186,15 @@ class CollaborativeView(QWidget):
     # ── Contribution en masse ─────────────────────────────────────────────────
 
     def _bulk_contribute(self) -> None:
+        self._start_contribute_worker(limit=None)
+
+    def _bulk_contribute_sample(self) -> None:
+        self._start_contribute_worker(limit=10)
+
+    def _start_contribute_worker(self, limit: int | None) -> None:
         if self._bulk_worker and self._bulk_worker.isRunning():
+            return
+        if self._bulk_sample_worker and self._bulk_sample_worker.isRunning():
             return
         cfg = get_collaborative_config()
         user_id = cfg.get("user_id")
@@ -186,16 +202,21 @@ class CollaborativeView(QWidget):
             QMessageBox.warning(self, "Non connecté", "Connectez-vous dans les paramètres.")
             return
         self._contribute_btn.setEnabled(False)
+        self._contribute_sample_btn.setEnabled(False)
         self._contribute_progress.setValue(0)
         self._contribute_progress.setVisible(True)
-        self._contribute_status.setText("Contribution en cours…")
-        worker = BulkContributeWorker(str(user_id), self)
+        label = f"{limit} contacts" if limit else "tous les contacts"
+        self._contribute_status.setText(f"Contribution en cours ({label})…")
+        worker = BulkContributeWorker(str(user_id), limit, self)
         worker.progress.connect(self._on_contribute_progress)
         worker.finished.connect(self._on_contribute_done)
         worker.error.connect(self._on_contribute_error)
         worker.finished.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
-        self._bulk_worker = worker
+        if limit is None:
+            self._bulk_worker = worker
+        else:
+            self._bulk_sample_worker = worker
         worker.start()
 
     def _on_contribute_progress(self, done: int, total: int) -> None:
@@ -204,7 +225,9 @@ class CollaborativeView(QWidget):
 
     def _on_contribute_done(self, contributed: int, skipped: int) -> None:
         self._bulk_worker = None
+        self._bulk_sample_worker = None
         self._contribute_btn.setEnabled(True)
+        self._contribute_sample_btn.setEnabled(True)
         self._contribute_progress.setVisible(False)
         parts = []
         if contributed:
@@ -218,7 +241,9 @@ class CollaborativeView(QWidget):
 
     def _on_contribute_error(self, message: str) -> None:
         self._bulk_worker = None
+        self._bulk_sample_worker = None
         self._contribute_btn.setEnabled(True)
+        self._contribute_sample_btn.setEnabled(True)
         self._contribute_progress.setVisible(False)
         self._contribute_status.setText(f"Erreur : {message}")
         self._contribute_status.setStyleSheet("color: #dc2626;")

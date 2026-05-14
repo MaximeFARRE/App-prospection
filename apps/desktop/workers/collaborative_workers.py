@@ -32,11 +32,37 @@ def _make_repo():
     session = get_supabase_session()
     access_token = session.get("access_token", "")
     refresh_token = session.get("refresh_token", "")
-    if access_token and refresh_token:
+    if not access_token and not refresh_token:
+        raise RuntimeError(
+            "Non connecté à Supabase. "
+            "Connectez-vous dans Paramètres → Base collaborative."
+        )
+    try:
+        client.auth.set_session(access_token, refresh_token)
+    except Exception:
+        # Access token expiré — tenter un refresh via le refresh token
         try:
-            client.auth.set_session(access_token, refresh_token)
-        except Exception:
-            logger.warning("Impossible de restaurer la session Supabase — reconnectez-vous.")
+            refreshed = client.auth.refresh_session(refresh_token)
+            if refreshed.session:
+                from services.settings_service import save_supabase_session
+                save_supabase_session(
+                    refreshed.session.access_token,
+                    refreshed.session.refresh_token,
+                )
+                client.auth.set_session(
+                    refreshed.session.access_token,
+                    refreshed.session.refresh_token,
+                )
+            else:
+                raise RuntimeError(
+                    "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
+                )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
+            ) from exc
 
     return SupabaseRepository(client)
 
@@ -217,9 +243,10 @@ class BulkContributeWorker(QThread):
     finished = pyqtSignal(int, int)      # contributed, skipped
     error = pyqtSignal(str)
 
-    def __init__(self, user_id: str, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, user_id: str, limit: Optional[int] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._user_id = user_id
+        self._limit = limit
 
     def run(self) -> None:
         from app.models.contact import Contact
@@ -227,9 +254,11 @@ class BulkContributeWorker(QThread):
 
         db = SessionLocal()
         try:
-            contacts = db.scalars(
+            contacts = list(db.scalars(
                 select(Contact).where(Contact.collab_is_contributed == False)  # noqa: E712
-            ).all()
+            ).all())
+            if self._limit is not None:
+                contacts = contacts[: self._limit]
             total = len(contacts)
             repo = _make_repo()
             service = _make_service(repo, db, self._user_id)
