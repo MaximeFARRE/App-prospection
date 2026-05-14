@@ -43,3 +43,19 @@ data/secure/*
 # Gmail OAuth tokens (sensibles)
 token*.json
 credentials.json
+
+# CV et documents personnels
+data/*.pdf
+
+# Artefacts de base de données supplémentaires
+data/*.db*
+data/*.bin
+data/sqlite_as_txt.txt*
+
+# Fichiers write-test de développement
+__write_test*
+data/__write_test*
+
+# Fichiers temporaires de tests
+apps/api/tests/.tmp/
+apps/api/tmp_*.db*
