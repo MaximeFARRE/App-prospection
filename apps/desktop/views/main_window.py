@@ -10,12 +10,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from views.dashboard_view import DashboardView
-from views.contacts_view import ContactsView
-from views.imports_view import ImportsView
 from views.campaigns_view import CampaignsView
+from views.contacts_view import ContactsView
+from views.dashboard_view import DashboardView
+from views.imports_view import ImportsView
 from views.replies_view import RepliesView
 from views.settings_view import SettingsView
+from views.templates_view import TemplatesView
 
 
 class MainWindow(QMainWindow):
@@ -59,12 +60,13 @@ class MainWindow(QMainWindow):
 
         # Boutons de navigation
         nav_items = [
-            ("📊  Dashboard",  0),
-            ("👥  Contacts",   1),
-            ("📥  Imports",    2),
-            ("📨  Campagnes",  3),
-            ("💬  Réponses",   4),
-            ("⚙️  Paramètres", 5),
+            ("📊  Dashboard",   0),
+            ("👥  Contacts",    1),
+            ("📥  Imports",     2),
+            ("📨  Campagnes",   3),
+            ("💬  Réponses",    4),
+            ("📝  Templates",   5),
+            ("⚙️  Paramètres",  6),
         ]
 
         self._nav_buttons: list[QPushButton] = []
@@ -100,6 +102,7 @@ class MainWindow(QMainWindow):
             ImportsView(),
             CampaignsView(),
             RepliesView(),
+            TemplatesView(),
             SettingsView(),
         ]:
             self._stack.addWidget(view)
