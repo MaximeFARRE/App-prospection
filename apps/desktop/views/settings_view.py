@@ -35,7 +35,7 @@ from services.settings_service import (
     set_collaborative_enabled,
 )
 from widgets.settings_widgets import AccountCard, SendLimitsSection, SyncSection
-from workers.collaborative_workers import SupabaseLoginWorker
+from workers.collaborative_workers import SupabaseLoginWorker, SupabaseSignUpWorker
 from workers.settings_workers import GmailConnectionWorker, GmailSyncWorker
 
 
@@ -52,6 +52,7 @@ class SettingsView(QWidget):
         self._test_workers: dict[int, GmailConnectionWorker] = {}
         self._sync_worker: GmailSyncWorker | None = None
         self._login_worker: SupabaseLoginWorker | None = None
+        self._signup_worker: SupabaseSignUpWorker | None = None
         self._sync_logs: list[str] = []
         self._loading_limits = False
 
@@ -469,6 +470,10 @@ class SettingsView(QWidget):
         self._collab_login_btn = QPushButton("Connexion")
         self._collab_login_btn.clicked.connect(self._start_collab_login)
         login_row.addWidget(self._collab_login_btn)
+
+        self._collab_signup_btn = QPushButton("Créer un compte")
+        self._collab_signup_btn.clicked.connect(self._start_collab_signup)
+        login_row.addWidget(self._collab_signup_btn)
         login_row.addStretch()
         user_form.addRow(login_row)
         layout.addWidget(user_group)
@@ -538,6 +543,43 @@ class SettingsView(QWidget):
     def _on_login_failed(self, message: str) -> None:
         self._login_worker = None
         self._collab_login_btn.setEnabled(True)
+        self._collab_status_label.setText(f"Échec : {message}")
+        self._collab_status_label.setStyleSheet("color: #dc2626;")
+
+    def _start_collab_signup(self) -> None:
+        if self._signup_worker and self._signup_worker.isRunning():
+            return
+        email = self._collab_email.text().strip()
+        password = self._collab_password.text()
+        if not email or not password:
+            QMessageBox.warning(self, "Créer un compte", "Email et mot de passe requis.")
+            return
+        self._collab_signup_btn.setEnabled(False)
+        self._collab_status_label.setText("Création du compte en cours…")
+        self._collab_status_label.setStyleSheet("color: #64748b;")
+        worker = SupabaseSignUpWorker(email, password, self)
+        worker.signup_success.connect(self._on_signup_success)
+        worker.signup_failed.connect(self._on_signup_failed)
+        worker.signup_success.connect(worker.deleteLater)
+        worker.signup_failed.connect(worker.deleteLater)
+        self._signup_worker = worker
+        worker.start()
+
+    def _on_signup_success(self, user_id: str, user_email: str) -> None:
+        self._signup_worker = None
+        self._collab_signup_btn.setEnabled(True)
+        save_collaborative_config({"user_id": user_id, "user_email": user_email, "credits": 0})
+        self._refresh_collab_status()
+        QMessageBox.information(
+            self,
+            "Base collaborative",
+            f"Compte créé et connecté en tant que {user_email}.\n"
+            "Vous pouvez maintenant utiliser la base collaborative.",
+        )
+
+    def _on_signup_failed(self, message: str) -> None:
+        self._signup_worker = None
+        self._collab_signup_btn.setEnabled(True)
         self._collab_status_label.setText(f"Échec : {message}")
         self._collab_status_label.setStyleSheet("color: #dc2626;")
 
