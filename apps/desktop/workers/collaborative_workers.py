@@ -63,11 +63,19 @@ def _make_repo():
             ) from exc
         fresh_access = access_token
 
-    # Injecter le JWT directement dans les headers PostgREST.
-    # Ne pas passer par set_session dont la propagation vers postgrest
-    # dépend de la version de supabase-py.
+    # Injecter le JWT dans les headers PostgREST des deux façons :
+    # 1. client.postgrest.auth() → self.headers (utilisé par SyncRequestBuilder)
+    # 2. client.postgrest.session.headers → headers httpx de niveau session
+    # Les deux sont nécessaires car httpx peut donner priorité aux session headers
+    # qui contiennent encore la clé anon définie lors du create_client().
+    auth_header = f"Bearer {fresh_access}"
     client.postgrest.auth(fresh_access)
-    logger.debug("_make_repo: JWT injecté dans PostgREST (token[:30]=%s…)", fresh_access[:30])
+    try:
+        client.postgrest.session.headers["Authorization"] = auth_header
+        logger.debug("_make_repo: JWT injecté dans self.headers ET session.headers")
+    except Exception as exc:
+        logger.warning("_make_repo: impossible de forcer session.headers (%s)", exc)
+    logger.debug("_make_repo: JWT (token[:30]=%s…)", fresh_access[:30])
 
     return SupabaseRepository(client)
 
@@ -109,6 +117,8 @@ class SupabaseSignUpWorker(QThread):
                 if access and refresh:
                     from services.settings_service import save_supabase_session
                     save_supabase_session(access, refresh)
+                # Upsert dans public.users pour satisfaire la FK contact_contributions
+                repo.upsert_user(result["user_id"], result["user_email"])
                 self.signup_success.emit(result["user_id"], result["user_email"])
             else:
                 self.signup_failed.emit("Création de compte échouée — email déjà utilisé ?")
@@ -140,6 +150,8 @@ class SupabaseLoginWorker(QThread):
                 if access and refresh:
                     from services.settings_service import save_supabase_session
                     save_supabase_session(access, refresh)
+                # Upsert dans public.users pour satisfaire la FK contact_contributions
+                repo.upsert_user(result["user_id"], result["user_email"])
                 self.login_success.emit(result["user_id"], result["user_email"])
             else:
                 self.login_failed.emit("Email ou mot de passe incorrect")
