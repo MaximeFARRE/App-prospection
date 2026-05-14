@@ -19,9 +19,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from PyQt6.QtGui import QColor
+
 from app.db.session import SessionLocal
 from app.repositories import contact_repository
-from workers.contacts_workers import ContactSexDetectionWorker, ContactUpdateWorker
+from workers.contacts_workers import ContactSexDetectionWorker, ContactUpdateWorker, EmailVerificationWorker
 from widgets.manual_contact_dialog import ManualContactDialog, ManualContactPayload
 
 
@@ -59,6 +61,7 @@ class ContactsView(QWidget):
         self._request_id = 0
         self._active_loader: _ContactsPageLoader | None = None
         self._sex_detection_worker: ContactSexDetectionWorker | None = None
+        self._email_verification_worker: EmailVerificationWorker | None = None
         self._is_rendering = False
 
         self._debounce_timer = QTimer(self)
@@ -88,8 +91,9 @@ class ContactsView(QWidget):
 
         self._email_status_filter = QComboBox()
         self._email_status_filter.addItem("Statut email: Tous", None)
-        self._email_status_filter.addItem("valid", "valid")
-        self._email_status_filter.addItem("invalid", "invalid")
+        self._email_status_filter.addItem("✓ Valide", "valid")
+        self._email_status_filter.addItem("✗ Invalide", "invalid")
+        self._email_status_filter.addItem("? Non vérifié", "__missing__")
         filters_row.addWidget(self._email_status_filter, stretch=1)
 
         self._blocked_filter = QComboBox()
@@ -112,6 +116,13 @@ class ContactsView(QWidget):
 
         self._detect_sex_button = QPushButton("Détecter les sexes")
         actions_row.addWidget(self._detect_sex_button)
+
+        self._verify_emails_button = QPushButton("Vérifier emails non vérifiés")
+        self._verify_emails_button.setToolTip(
+            "Vérifie via QuickEmailVerification tous les contacts sans statut email.\n"
+            "Nécessite une clé API configurée dans Paramètres."
+        )
+        actions_row.addWidget(self._verify_emails_button)
 
         self._block_contact_button = QPushButton("Bloquer le contact sélectionné")
         actions_row.addWidget(self._block_contact_button)
@@ -171,6 +182,7 @@ class ContactsView(QWidget):
         self._blocked_filter.currentIndexChanged.connect(self._schedule_reload)
         self._contacted_filter.currentIndexChanged.connect(self._schedule_reload)
         self._detect_sex_button.clicked.connect(self._start_sex_detection)
+        self._verify_emails_button.clicked.connect(self._start_email_verification)
         self._block_contact_button.clicked.connect(self._block_selected_contact)
         self._add_contact_button.clicked.connect(self._open_add_contact_dialog)
         self._prev_button.clicked.connect(self._go_prev_page)
@@ -262,6 +274,15 @@ class ContactsView(QWidget):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col_index in {8, 9}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col_index == 7:  # colonne "Statut email"
+                    if value == "valid":
+                        item.setForeground(QColor("#27ae60"))
+                    elif value == "invalid":
+                        item.setForeground(QColor("#e74c3c"))
+                    else:
+                        item.setForeground(QColor("#95a5a6"))
+                if row.get("notes"):
+                    item.setToolTip(str(row["notes"]))
                 self._table.setItem(row_index, col_index, item)
 
             sex_combo = QComboBox()
@@ -428,6 +449,50 @@ class ContactsView(QWidget):
             if row["id"] == contact_id:
                 return index
         return -1
+
+    def _start_email_verification(self) -> None:
+        if self._email_verification_worker is not None and self._email_verification_worker.isRunning():
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Vérification des emails",
+            "Lancer la vérification de tous les contacts sans statut email ?\n"
+            "(Nécessite une clé QuickEmailVerification configurée dans Paramètres.)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        worker = EmailVerificationWorker(parent=self)
+        worker.progress.connect(self._on_email_verification_progress)
+        worker.finished.connect(self._on_email_verification_finished)
+        worker.finished.connect(worker.deleteLater)
+        self._email_verification_worker = worker
+        self._verify_emails_button.setEnabled(False)
+        self._status_label.setText("Vérification des emails en cours…")
+        worker.start()
+
+    def _on_email_verification_progress(self, current: int, total: int, email: str) -> None:
+        self._status_label.setText(f"Vérification {current}/{total} : {email}")
+
+    def _on_email_verification_finished(self, payload: dict, error: str) -> None:
+        self._verify_emails_button.setEnabled(True)
+        self._email_verification_worker = None
+
+        if error:
+            QMessageBox.warning(self, "Vérification des emails", f"Erreur : {error}")
+            self._status_label.setText("Vérification échouée.")
+            return
+
+        verified = int(payload.get("verified", 0))
+        invalid = int(payload.get("invalid", 0))
+        errors = int(payload.get("errors", 0))
+        self._status_label.setText(
+            f"Vérification terminée : {verified} valides, {invalid} invalides, {errors} erreurs."
+        )
+        self._reload_first_page()
 
     def _open_add_contact_dialog(self) -> None:
         dialog = ManualContactDialog(self)
@@ -638,6 +703,7 @@ def _contact_to_row(contact: Any) -> dict[str, Any]:
         "email_status": _to_text(contact.email_status),
         "has_been_contacted": bool(getattr(contact, "has_been_contacted", False)),
         "is_blocked": bool(contact.is_blocked),
+        "notes": contact.notes or "",
     }
 
 

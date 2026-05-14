@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QWidget
 
 from app.db.session import SessionLocal
+from app.models.contact import Contact
 from app.repositories import contact_repository
+from app.services.email_verification_service import verify_email_for_send
 from app.services.sex_detection_service import detect_contacts_sex
 
 
@@ -25,6 +29,70 @@ class ContactUpdateWorker(QThread):
                 return
             db.commit()
             self.finished.emit({"id": contact.id}, "")
+        except Exception as exc:
+            db.rollback()
+            self.finished.emit({}, str(exc))
+        finally:
+            db.close()
+
+
+class EmailVerificationWorker(QThread):
+    """Vérifie les adresses email des contacts non vérifiés via QuickEmailVerification."""
+
+    progress = pyqtSignal(int, int, str)   # (current, total, email)
+    finished = pyqtSignal(dict, str)        # ({verified, invalid, errors}, error_msg)
+
+    def __init__(self, contact_ids: list[int] | None = None, parent: QWidget | None = None) -> None:
+        """Si contact_ids est None, vérifie tous les contacts sans email_status."""
+        super().__init__(parent)
+        self._contact_ids = contact_ids
+
+    def run(self) -> None:
+        db = SessionLocal()
+        try:
+            if self._contact_ids is not None:
+                contacts = (
+                    db.query(Contact)
+                    .filter(Contact.id.in_(self._contact_ids), Contact.email.isnot(None))
+                    .all()
+                )
+            else:
+                contacts = (
+                    db.query(Contact)
+                    .filter(
+                        Contact.email.isnot(None),
+                        Contact.email_status.is_(None),
+                    )
+                    .order_by(Contact.id)
+                    .all()
+                )
+
+            total = len(contacts)
+            verified = 0
+            invalid = 0
+            errors = 0
+
+            for idx, contact in enumerate(contacts, start=1):
+                self.progress.emit(idx, total, contact.email or "")
+                try:
+                    decision = verify_email_for_send(contact.email or "")
+                    now = datetime.now(timezone.utc)
+                    new_status = "valid" if decision.can_send else "invalid"
+                    contact_repository.update_contact(db, contact.id, {
+                        "email_status": new_status,
+                        "email_checked_at": now,
+                        "email_check_reason": decision.reason or "",
+                    })
+                    db.commit()
+                    if decision.can_send:
+                        verified += 1
+                    else:
+                        invalid += 1
+                except Exception:
+                    db.rollback()
+                    errors += 1
+
+            self.finished.emit({"verified": verified, "invalid": invalid, "errors": errors}, "")
         except Exception as exc:
             db.rollback()
             self.finished.emit({}, str(exc))

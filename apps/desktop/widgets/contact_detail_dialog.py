@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QVBoxLayout, QWidget
@@ -13,6 +14,11 @@ class ContactDetailDialog(QDialog):
 
         company = getattr(contact, "company", None)
         company_name = company.name if company else "-"
+
+        checked_at = contact.email_checked_at
+        checked_at_str = (
+            checked_at.strftime("%d/%m/%Y %H:%M") if isinstance(checked_at, datetime) else "-"
+        )
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -29,6 +35,8 @@ class ContactDetailDialog(QDialog):
             ("Téléphone", contact.phone),
             ("LinkedIn", contact.linkedin_url),
             ("Statut email", contact.email_status),
+            ("Vérifié le", checked_at_str),
+            ("Motif vérif.", contact.email_check_reason),
             ("Bloqué", "Oui" if contact.is_blocked else "Non"),
             ("Source", contact.source),
             ("Notes", contact.notes),
