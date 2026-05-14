@@ -4,7 +4,32 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QWidget
 
 from app.db.session import SessionLocal
+from app.repositories import contact_repository
 from app.services.sex_detection_service import detect_contacts_sex
+
+
+class ContactUpdateWorker(QThread):
+    finished = pyqtSignal(dict, str)
+
+    def __init__(self, contact_id: int, fields: dict, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._contact_id = contact_id
+        self._fields = fields
+
+    def run(self) -> None:
+        db = SessionLocal()
+        try:
+            contact = contact_repository.update_contact(db, self._contact_id, self._fields)
+            if contact is None:
+                self.finished.emit({}, "Contact introuvable.")
+                return
+            db.commit()
+            self.finished.emit({"id": contact.id}, "")
+        except Exception as exc:
+            db.rollback()
+            self.finished.emit({}, str(exc))
+        finally:
+            db.close()
 
 
 class ContactSexDetectionWorker(QThread):

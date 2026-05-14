@@ -21,8 +21,7 @@ from PyQt6.QtWidgets import (
 
 from app.db.session import SessionLocal
 from app.repositories import contact_repository
-from workers.contacts_workers import ContactSexDetectionWorker
-from widgets.contact_detail_dialog import ContactDetailDialog
+from workers.contacts_workers import ContactSexDetectionWorker, ContactUpdateWorker
 from widgets.manual_contact_dialog import ManualContactDialog, ManualContactPayload
 
 
@@ -546,7 +545,39 @@ class ContactsView(QWidget):
             self._load_page()
             return
 
-        ContactDetailDialog(contact, self).exec()
+        dialog = ManualContactDialog(self, contact=contact)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._update_contact(dialog.payload())
+
+    def _update_contact(self, payload: ManualContactPayload) -> None:
+        if payload.contact_id is None:
+            return
+        fields = {
+            "first_name": payload.first_name,
+            "last_name": payload.last_name,
+            "company_name": payload.company_name,
+            "job_title": payload.job_title,
+            "sex": payload.sex,
+            "country": payload.country,
+            "city": payload.city,
+            "phone": payload.phone,
+            "linkedin_url": payload.linkedin_url,
+            "notes": payload.notes,
+        }
+        worker = ContactUpdateWorker(payload.contact_id, fields, self)
+        worker.finished.connect(self._on_contact_updated)
+        worker.finished.connect(worker.deleteLater)
+        self._status_label.setText("Mise à jour en cours…")
+        worker.start()
+
+    def _on_contact_updated(self, result: dict, error: str) -> None:
+        if error:
+            QMessageBox.warning(self, "Modifier le contact", f"Impossible de mettre à jour :\n{error}")
+            self._status_label.setText("Erreur lors de la mise à jour.")
+            return
+        self._status_label.setText("Contact mis à jour.")
+        self._reload_first_page()
 
     def _block_selected_contact(self) -> None:
         row_index = self._table.currentRow()

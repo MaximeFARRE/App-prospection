@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -28,12 +29,22 @@ class ManualContactPayload:
     phone: str | None
     linkedin_url: str | None
     notes: str | None
+    contact_id: int | None = None
 
 
 class ManualContactDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    """Dialogue d'ajout ou de modification d'un contact.
+
+    En mode ajout (contact=None) : tous les champs sont vides et modifiables.
+    En mode édition (contact=<objet ORM>) : champs pré-remplis, email en lecture seule.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, contact: Any = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Ajouter un contact")
+        self._contact_id: int | None = getattr(contact, "id", None)
+        self._edit_mode = contact is not None
+
+        self.setWindowTitle("Modifier le contact" if self._edit_mode else "Ajouter un contact")
         self.setMinimumWidth(520)
 
         root = QVBoxLayout(self)
@@ -50,6 +61,10 @@ class ManualContactDialog(QDialog):
 
         self._email_input = QLineEdit()
         self._email_input.setPlaceholderText("email@entreprise.com")
+        if self._edit_mode:
+            self._email_input.setReadOnly(True)
+            self._email_input.setToolTip("L'adresse email ne peut pas être modifiée.")
+            self._email_input.setStyleSheet("background: #f1f5f9; color: #64748b;")
         form.addRow("Email *", self._email_input)
 
         self._company_input = QLineEdit()
@@ -96,6 +111,43 @@ class ManualContactDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+        if contact is not None:
+            self._prefill(contact)
+
+    def _prefill(self, contact: Any) -> None:
+        if contact.first_name:
+            self._first_name_input.setText(contact.first_name)
+        if contact.last_name:
+            self._last_name_input.setText(contact.last_name)
+        if contact.email:
+            self._email_input.setText(contact.email)
+
+        company = getattr(contact, "company", None)
+        if company and company.name:
+            self._company_input.setText(company.name)
+
+        if contact.job_title:
+            self._job_title_input.setText(contact.job_title)
+
+        sex = contact.sex or ""
+        if sex == "homme":
+            self._sex_input.setCurrentIndex(1)
+        elif sex == "femme":
+            self._sex_input.setCurrentIndex(2)
+        else:
+            self._sex_input.setCurrentIndex(0)
+
+        if contact.country:
+            self._country_input.setText(contact.country)
+        if contact.city:
+            self._city_input.setText(contact.city)
+        if contact.phone:
+            self._phone_input.setText(contact.phone)
+        if contact.linkedin_url:
+            self._linkedin_input.setText(contact.linkedin_url)
+        if contact.notes:
+            self._notes_input.setPlainText(contact.notes)
+
     def payload(self) -> ManualContactPayload:
         return ManualContactPayload(
             first_name=_clean(self._first_name_input.text()),
@@ -109,14 +161,16 @@ class ManualContactDialog(QDialog):
             phone=_clean(self._phone_input.text()),
             linkedin_url=_clean(self._linkedin_input.text()),
             notes=_clean(self._notes_input.toPlainText()),
+            contact_id=self._contact_id,
         )
 
     def _on_submit(self) -> None:
-        email = self._email_input.text().strip()
-        if not email:
-            QMessageBox.warning(self, "Contact", "Le champ email est obligatoire.")
-            self._email_input.setFocus()
-            return
+        if not self._edit_mode:
+            email = self._email_input.text().strip()
+            if not email:
+                QMessageBox.warning(self, "Contact", "Le champ email est obligatoire.")
+                self._email_input.setFocus()
+                return
         self.accept()
 
 

@@ -126,6 +126,34 @@ def set_names(
     return contact
 
 
+def update_contact(db: Session, contact_id: int, fields: dict) -> Contact | None:
+    """Met à jour les champs fournis sur un contact existant.
+
+    Gère company_name comme alias vers company_id (lookup ou création).
+    Les clés inconnues sont ignorées silencieusement.
+    """
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if contact is None:
+        return None
+
+    _DIRECT_TEXT = {"first_name", "last_name", "job_title", "country", "city",
+                    "phone", "linkedin_url", "notes", "email_check_reason"}
+    _DIRECT_OTHER = {"is_blocked", "company_id", "email_status", "email_checked_at"}
+
+    for key, val in fields.items():
+        if key == "company_name":
+            company = _get_or_create_company_by_name(db, val)
+            contact.company_id = company.id if company is not None else None
+        elif key == "sex":
+            contact.sex = normalize_sex(val)
+        elif key in _DIRECT_TEXT:
+            setattr(contact, key, _clean_optional_text(val))
+        elif key in _DIRECT_OTHER:
+            setattr(contact, key, val)
+
+    return contact
+
+
 def create_manual_contact(
     db: Session,
     *,

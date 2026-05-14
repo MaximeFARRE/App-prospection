@@ -32,6 +32,7 @@ class ContactUpdate(BaseModel):
     sex: str | None = None
     job_title: str | None = None
     country: str | None = None
+    city: str | None = None
     phone: str | None = None
     linkedin_url: str | None = None
     company_id: int | None = None
