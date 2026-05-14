@@ -41,6 +41,7 @@ class SettingsView(QWidget):
         self._build_ui()
         self._load_persisted_settings()
         self._refresh_account_cards()
+        self._auto_test_configured_accounts()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -155,6 +156,26 @@ class SettingsView(QWidget):
 
     def _get_account(self, account_index: int) -> GmailAccount:
         return settings.gmail_account(account_index)
+
+    def _auto_test_configured_accounts(self) -> None:
+        for account_index in (1, 2, 3):
+            account = self._get_account(account_index)
+            if not account.is_configured:
+                continue
+            self._account_cards[account_index].set_testing(True)
+            worker = GmailConnectionWorker(account_index, account, self)
+            worker.finished.connect(self._on_auto_test_finished)
+            worker.finished.connect(worker.deleteLater)
+            self._test_workers[account_index] = worker
+            worker.start()
+
+    def _on_auto_test_finished(self, payload_obj: object) -> None:
+        payload = dict(payload_obj)
+        account_index = int(payload["index"])
+        self._test_workers.pop(account_index, None)
+        self._account_cards[account_index].set_testing(False)
+        self._tested_accounts[account_index] = bool(payload.get("ok"))
+        self._refresh_account_cards()
 
     def _test_account_connection(self, account_index: int) -> None:
         account = self._get_account(account_index)
