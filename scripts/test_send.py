@@ -35,9 +35,9 @@ from googleapiclient.discovery import build          # noqa: E402
 # ── Contacts de test ──────────────────────────────────────────────────────────
 # (first_name, last_name, email, country, sex, company_name, contact_id)
 TEST_TARGETS = [
-    ("Maxime",  "Farré",  "maximefarre54@gmail.com",   "france", "homme", "Test FR",     1),
-    ("Maxime",  "Farré",  "maxime.farre@occifloc.fr",  "france", "homme", "Occifloc FR", 2),
-    ("Maxime",  "Farré",  "occifloc@gmail.com",        "canada", "homme", "Occifloc EN", 3),
+    ("Jane",  "Smith",  "jane.smith.test@example.com",   "france", "femme", "Acme Corp FR",  1),
+    ("John",  "Doe",    "john.doe.test@example.com",     "france", "homme", "Acme Corp Pro", 2),
+    ("Alice", "Martin", "alice.martin.test@example.com", "canada", "femme", "Acme Corp EN",  3),
 ]
 
 

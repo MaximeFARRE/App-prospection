@@ -1,7 +1,7 @@
 """Vérifie les aliases Gmail (sendAs) configurés sur chaque compte.
 
 Affiche la liste des adresses d'envoi autorisées pour chaque compte OAuth,
-et indique si l'alias du compte 2 (maxime@maxime-farre.xyz) est bien enregistré.
+et indique si l'alias du compte 2 (GMAIL_EMAIL_2) est bien enregistré.
 
 Usage :
     cd apps/api
@@ -103,9 +103,9 @@ def main() -> None:
         check_account(i, account)
 
     print("\n  ── Résumé ───────────────────────────────────────────────────")
-    print("  Si l'alias maxime@maxime-farre.xyz est listé et vérifié (✓),")
+    print("  Si l'alias configuré dans GMAIL_EMAIL_2 est listé et vérifié (✓),")
     print("  les mails seront bien envoyés depuis cette adresse.")
-    print("  Si le token appartient au compte principal (maxime.farre8@gmail.com),")
+    print("  Si le token appartient au compte principal (GMAIL_EMAIL_1),")
     print("  c'est NORMAL : Gmail envoie via le compte principal au nom de l'alias.\n")
 
 
