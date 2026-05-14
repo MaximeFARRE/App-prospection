@@ -26,10 +26,12 @@ from services.gmail_setup_service import launch_gmail_setup
 from services.settings_service import (
     get_collaborative_config,
     get_settings,
+    get_supabase_credentials,
     load_credentials,
     save_collaborative_config,
     save_credentials,
     save_settings,
+    save_supabase_credentials,
     set_collaborative_enabled,
 )
 from widgets.settings_widgets import AccountCard, SendLimitsSection, SyncSection
@@ -417,6 +419,7 @@ class SettingsView(QWidget):
         layout.setSpacing(10)
 
         cfg = get_collaborative_config()
+        supa_creds = get_supabase_credentials()
 
         # Toggle
         self._collab_toggle = QCheckBox("Activer le mode collaboratif")
@@ -424,26 +427,51 @@ class SettingsView(QWidget):
         self._collab_toggle.toggled.connect(self._on_collab_toggled)
         layout.addWidget(self._collab_toggle)
 
-        # Formulaire de connexion
-        form = QFormLayout()
-        form.setSpacing(6)
+        # ── Connexion à la base ───────────────────────────────────────────────
+        db_group = QGroupBox("Connexion à la base Supabase")
+        db_form = QFormLayout(db_group)
+        db_form.setContentsMargins(10, 10, 10, 10)
+        db_form.setSpacing(6)
+
+        self._supabase_url_input = QLineEdit()
+        self._supabase_url_input.setPlaceholderText("https://xxxxxxxxxxxx.supabase.co")
+        self._supabase_url_input.setText(supa_creds.get("supabase_url", ""))
+        db_form.addRow("URL de la base", self._supabase_url_input)
+
+        self._supabase_key_input = QLineEdit()
+        self._supabase_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._supabase_key_input.setPlaceholderText("eyJhbGciOiJIUzI1NiIsInR5c…  (clé anonyme)")
+        self._supabase_key_input.setText(supa_creds.get("supabase_anon_key", ""))
+        db_form.addRow("Clé anonyme (anon key)", self._supabase_key_input)
+
+        save_db_btn = QPushButton("Enregistrer la connexion")
+        save_db_btn.clicked.connect(self._save_supabase_credentials)
+        db_form.addWidget(save_db_btn)
+        layout.addWidget(db_group)
+
+        # ── Compte utilisateur ────────────────────────────────────────────────
+        user_group = QGroupBox("Compte utilisateur")
+        user_form = QFormLayout(user_group)
+        user_form.setContentsMargins(10, 10, 10, 10)
+        user_form.setSpacing(6)
+
         self._collab_email = QLineEdit()
         self._collab_email.setPlaceholderText("email@exemple.com")
         self._collab_email.setText(cfg.get("user_email") or "")
-        form.addRow("Email Supabase", self._collab_email)
+        user_form.addRow("Email", self._collab_email)
 
         self._collab_password = QLineEdit()
         self._collab_password.setEchoMode(QLineEdit.EchoMode.Password)
         self._collab_password.setPlaceholderText("••••••••")
-        form.addRow("Mot de passe", self._collab_password)
-        layout.addLayout(form)
+        user_form.addRow("Mot de passe", self._collab_password)
 
         login_row = QHBoxLayout()
         self._collab_login_btn = QPushButton("Connexion")
         self._collab_login_btn.clicked.connect(self._start_collab_login)
         login_row.addWidget(self._collab_login_btn)
         login_row.addStretch()
-        layout.addLayout(login_row)
+        user_form.addRow(login_row)
+        layout.addWidget(user_group)
 
         # Statut
         self._collab_status_label = QLabel()
@@ -471,6 +499,15 @@ class SettingsView(QWidget):
     def _on_collab_toggled(self, enabled: bool) -> None:
         set_collaborative_enabled(enabled)
         self.collaborative_toggled.emit(enabled)
+
+    def _save_supabase_credentials(self) -> None:
+        url = self._supabase_url_input.text().strip()
+        key = self._supabase_key_input.text().strip()
+        if not url or not key:
+            QMessageBox.warning(self, "Champs requis", "L'URL et la clé anonyme sont obligatoires.")
+            return
+        save_supabase_credentials(url, key)
+        QMessageBox.information(self, "Supabase", "Connexion à la base enregistrée.")
 
     def _start_collab_login(self) -> None:
         if self._login_worker and self._login_worker.isRunning():
