@@ -124,6 +124,13 @@ class ContactsView(QWidget):
         )
         actions_row.addWidget(self._verify_emails_button)
 
+        self._reverify_emails_button = QPushButton("Re-vérifier la sélection")
+        self._reverify_emails_button.setToolTip(
+            "Relance la vérification email pour les contacts sélectionnés,\n"
+            "même s'ils ont déjà un statut email."
+        )
+        actions_row.addWidget(self._reverify_emails_button)
+
         self._block_contact_button = QPushButton("Bloquer la sélection")
         actions_row.addWidget(self._block_contact_button)
 
@@ -183,6 +190,7 @@ class ContactsView(QWidget):
         self._contacted_filter.currentIndexChanged.connect(self._schedule_reload)
         self._detect_sex_button.clicked.connect(self._start_sex_detection)
         self._verify_emails_button.clicked.connect(self._start_email_verification)
+        self._reverify_emails_button.clicked.connect(self._start_force_email_verification)
         self._block_contact_button.clicked.connect(self._block_selected_contact)
         self._add_contact_button.clicked.connect(self._open_add_contact_dialog)
         self._prev_button.clicked.connect(self._go_prev_page)
@@ -471,14 +479,39 @@ class ContactsView(QWidget):
         worker.finished.connect(worker.deleteLater)
         self._email_verification_worker = worker
         self._verify_emails_button.setEnabled(False)
+        self._reverify_emails_button.setEnabled(False)
         self._status_label.setText("Vérification des emails en cours…")
         worker.start()
 
     def _on_email_verification_progress(self, current: int, total: int, email: str) -> None:
         self._status_label.setText(f"Vérification {current}/{total} : {email}")
 
+    def _start_force_email_verification(self) -> None:
+        if self._email_verification_worker is not None and self._email_verification_worker.isRunning():
+            return
+
+        selected_row_indices = sorted({idx.row() for idx in self._table.selectionModel().selectedRows()})
+        selected_row_indices = [i for i in selected_row_indices if 0 <= i < len(self._rows)]
+
+        if not selected_row_indices:
+            QMessageBox.warning(self, "Re-vérifier emails", "Sélectionne d'abord des contacts dans la table.")
+            return
+
+        contact_ids = [int(self._rows[i]["id"]) for i in selected_row_indices]
+
+        worker = EmailVerificationWorker(contact_ids=contact_ids, force=True, parent=self)
+        worker.progress.connect(self._on_email_verification_progress)
+        worker.finished.connect(self._on_email_verification_finished)
+        worker.finished.connect(worker.deleteLater)
+        self._email_verification_worker = worker
+        self._reverify_emails_button.setEnabled(False)
+        self._verify_emails_button.setEnabled(False)
+        self._status_label.setText(f"Re-vérification de {len(contact_ids)} contact(s) en cours…")
+        worker.start()
+
     def _on_email_verification_finished(self, payload: dict, error: str) -> None:
         self._verify_emails_button.setEnabled(True)
+        self._reverify_emails_button.setEnabled(True)
         self._email_verification_worker = None
 
         if error:

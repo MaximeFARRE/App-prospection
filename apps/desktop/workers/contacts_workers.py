@@ -42,10 +42,17 @@ class EmailVerificationWorker(QThread):
     progress = pyqtSignal(int, int, str)   # (current, total, email)
     finished = pyqtSignal(dict, str)        # ({verified, invalid, errors}, error_msg)
 
-    def __init__(self, contact_ids: list[int] | None = None, parent: QWidget | None = None) -> None:
-        """Si contact_ids est None, vérifie tous les contacts sans email_status."""
+    def __init__(
+        self,
+        contact_ids: list[int] | None = None,
+        force: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        """Si contact_ids est None, vérifie tous les contacts sans email_status.
+        Si force=True, ignore le filtre email_status IS NULL."""
         super().__init__(parent)
         self._contact_ids = contact_ids
+        self._force = force
 
     def run(self) -> None:
         db = SessionLocal()
@@ -54,6 +61,13 @@ class EmailVerificationWorker(QThread):
                 contacts = (
                     db.query(Contact)
                     .filter(Contact.id.in_(self._contact_ids), Contact.email.isnot(None))
+                    .all()
+                )
+            elif self._force:
+                contacts = (
+                    db.query(Contact)
+                    .filter(Contact.email.isnot(None))
+                    .order_by(Contact.id)
                     .all()
                 )
             else:
