@@ -45,6 +45,32 @@ def _make_service(repo, db, user_id: str):
     )
 
 
+# ── Inscription ───────────────────────────────────────────────────────────────
+
+class SupabaseSignUpWorker(QThread):
+    """Crée un compte Supabase Auth depuis l'app, sans passer par le dashboard."""
+
+    signup_success = pyqtSignal(str, str)  # user_id, user_email
+    signup_failed = pyqtSignal(str)        # message d'erreur
+
+    def __init__(self, email: str, password: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._email = email
+        self._password = password
+
+    def run(self) -> None:
+        try:
+            repo = _make_repo()
+            result = repo.sign_up(self._email, self._password)
+            if result:
+                self.signup_success.emit(result["user_id"], result["user_email"])
+            else:
+                self.signup_failed.emit("Création de compte échouée — email déjà utilisé ?")
+        except Exception as exc:
+            logger.exception("SupabaseSignUpWorker failed")
+            self.signup_failed.emit(str(exc))
+
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 class SupabaseLoginWorker(QThread):
