@@ -248,6 +248,7 @@ def _create_contact(db: Session, email: str, is_blocked: bool = False) -> Contac
     contact = Contact(
         first_name="Alice",
         last_name="Martin",
+        sex="homme",
         email=email,
         email_normalized=email,
         is_blocked=is_blocked,

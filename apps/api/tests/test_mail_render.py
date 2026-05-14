@@ -246,8 +246,8 @@ def test_load_template_raises_on_invalid_language() -> None:
 
 
 def test_load_template_raises_on_invalid_variant() -> None:
-    with pytest.raises(ValueError, match="Variant A/B non supporté"):
-        mail_render_service.load_template("intro", "fr", "c")
+    with pytest.raises(ValueError, match="Variant non supporté"):
+        mail_render_service.load_template("intro", "fr", "AB")
 
 
 def test_load_template_raises_on_invalid_step() -> None:
