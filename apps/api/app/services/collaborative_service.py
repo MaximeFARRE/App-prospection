@@ -105,13 +105,22 @@ class CollaborativeService:
             "linkedin_url": contact.linkedin_url,
             "quality_score": result.score,
         }
-        contact_id = self._repo.upsert_contact(contact.email, metadata)
+        try:
+            contact_id = self._repo.upsert_contact(contact.email, metadata)
+        except Exception as exc:
+            logger.exception("upsert_contact raised pour email=%r", contact.email)
+            return ContributionResult(
+                success=False,
+                contact_id=None,
+                credits_awarded=0,
+                rejection_reason=f"Upsert échoué : {exc}",
+            )
         if not contact_id:
             return ContributionResult(
                 success=False,
                 contact_id=None,
                 credits_awarded=0,
-                rejection_reason="Échec de l'upsert Supabase",
+                rejection_reason="Upsert OK mais aucun ID retourné",
             )
 
         self._repo.create_contribution(self._user_id, contact_id)

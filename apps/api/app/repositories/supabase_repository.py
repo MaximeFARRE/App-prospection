@@ -137,32 +137,40 @@ class SupabaseRepository:
     # ── Contribution ──────────────────────────────────────────────────────────
 
     def upsert_contact(self, email: str, metadata: dict) -> Optional[str]:
-        """Insère ou met à jour un contact par email_hash. Retourne l'UUID Supabase."""
+        """Insère ou met à jour un contact par email_hash. Retourne l'UUID Supabase.
+
+        Lève une exception en cas d'erreur (RLS, réseau, etc.) au lieu de
+        retourner None silencieusement, pour que l'appelant puisse afficher
+        le message exact.
+        """
+        email_hash = _hash_email(email)
+        payload = {
+            "email_hash": email_hash,
+            **{k: v for k, v in metadata.items() if k != "email"},
+        }
+        logger.debug("upsert_contact: payload keys=%s", list(payload.keys()))
+        # Vérifier que le client est bien authentifié avant l'appel
         try:
-            email_hash = _hash_email(email)
-            payload = {
-                "email_hash": email_hash,
-                **{k: v for k, v in metadata.items() if k != "email"},
-            }
-            logger.debug("upsert_contact: payload keys=%s", list(payload.keys()))
-            # Vérifier que le client est bien authentifié avant l'appel
             user = self._client.auth.get_user()
-            logger.debug("upsert_contact: auth uid=%s",
-                         user.user.id if user and user.user else "AUCUN (anonyme!)")
-            resp = (
-                self._client.table("contacts")
-                .upsert(payload, on_conflict="email_hash")
-                .execute()
+            uid = user.user.id if user and user.user else None
+        except Exception:
+            uid = None
+        logger.debug("upsert_contact: auth uid=%s", uid or "AUCUN (anonyme!)")
+        if not uid:
+            raise RuntimeError(
+                "Pas de session active — reconnectez-vous dans Paramètres → Base collaborative."
             )
-            rows = resp.data or []
-            logger.debug("upsert_contact: %d ligne(s) retournée(s)", len(rows))
-            if rows:
-                return str(rows[0]["id"])
-            logger.warning("upsert_contact: réponse vide (resp=%s)", resp)
-            return None
-        except Exception as exc:
-            logger.exception("upsert_contact failed — %s: %s", type(exc).__name__, exc)
-            return None
+        resp = (
+            self._client.table("contacts")
+            .upsert(payload, on_conflict="email_hash")
+            .execute()
+        )
+        rows = resp.data or []
+        logger.debug("upsert_contact: %d ligne(s) retournée(s)", len(rows))
+        if rows:
+            return str(rows[0]["id"])
+        logger.warning("upsert_contact: réponse vide (resp=%s)", resp)
+        return None
 
     def create_contribution(self, user_id: str, contact_id: str) -> bool:
         """Enregistre la contribution d'un contact par l'utilisateur.

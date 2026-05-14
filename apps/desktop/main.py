@@ -20,13 +20,19 @@ from views.main_window import MainWindow  # noqa: E402
 
 _LOG_FILE = Path(_DESKTOP_DIR) / "app.log"
 
-_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-_handler.setLevel(logging.DEBUG)
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
-))
+_fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
+
+_file_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(_fmt)
+
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setLevel(logging.DEBUG)
+_console_handler.setFormatter(_fmt)
+
 logging.getLogger().setLevel(logging.DEBUG)
-logging.getLogger().addHandler(_handler)
+logging.getLogger().addHandler(_file_handler)
+logging.getLogger().addHandler(_console_handler)
 # Réduire le bruit des bibliothèques tierces
 for _noisy in ("httpx", "httpcore", "urllib3", "postgrest"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
