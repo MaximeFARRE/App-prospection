@@ -319,3 +319,158 @@ class TemplatesView(QWidget):
         self._lang_combo.setCurrentIndex(0)
         self._variant_combo.setCurrentIndex(0)
         self._subject_input.setFocus()
+
+    def _save_template(self) -> None:
+        subject = self._subject_input.text().strip()
+        body = self._body_editor.toPlainText().strip()
+
+        if not subject:
+            QMessageBox.warning(self, "Enregistrer", "Le sujet ne peut pas être vide.")
+            self._subject_input.setFocus()
+            return
+        if not body:
+            QMessageBox.warning(self, "Enregistrer", "Le corps du message ne peut pas être vide.")
+            self._body_editor.setFocus()
+            return
+
+        step    = self._step_combo.currentData()
+        lang    = self._lang_combo.currentData()
+        variant = self._variant_combo.currentData()
+        target  = _TEMPLATES_DIR / f"{step}_{lang}_{variant}.md"
+
+        if target.exists() and target != self._current_file:
+            answer = QMessageBox.question(
+                self,
+                "Écraser ?",
+                f"Le fichier {target.name} existe déjà. L'écraser ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+        content = f"Subject: {subject}\n\n{body}\n"
+        try:
+            target.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.critical(self, "Erreur", f"Impossible d'enregistrer le fichier :\n{exc}")
+            return
+
+        self._current_file = target
+        self._refresh_list()
+        QMessageBox.information(self, "Enregistré", f"Template enregistré : {target.name}")
+
+    def _delete_template(self) -> None:
+        if self._current_file is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Supprimer",
+            f"Supprimer définitivement {self._current_file.name} ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._current_file.unlink()
+        except OSError as exc:
+            QMessageBox.critical(self, "Erreur", f"Impossible de supprimer le fichier :\n{exc}")
+            return
+        self._current_file = None
+        self._delete_btn.setEnabled(False)
+        self._refresh_list()
+        self._new_template()
+
+    def _show_preview(self) -> None:
+        subject = self._subject_input.text().strip()
+        body    = self._body_editor.toPlainText().strip()
+        if not subject and not body:
+            QMessageBox.information(self, "Aperçu", "Le template est vide.")
+            return
+
+        preview_vars  = _build_preview_vars()
+        rend_subject  = _replace_vars(subject, preview_vars)
+        rend_body     = _replace_vars(body, preview_vars)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Aperçu du template (données fictives)")
+        dialog.setMinimumSize(680, 500)
+        layout = QVBoxLayout(dialog)
+
+        note = QLabel("Rendu avec des données d'exemple — les vraies valeurs sont insérées à l'envoi.")
+        note.setStyleSheet("color: #64748b; font-size: 11px;")
+        layout.addWidget(note)
+
+        subject_box = QLabel(f"<b>Sujet :</b> {rend_subject}")
+        subject_box.setStyleSheet(
+            "background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 6px;"
+        )
+        subject_box.setWordWrap(True)
+        layout.addWidget(subject_box)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #e2e8f0;")
+        layout.addWidget(sep)
+
+        body_display = QTextEdit()
+        body_display.setReadOnly(True)
+        body_display.setPlainText(rend_body)
+        layout.addWidget(body_display, stretch=1)
+
+        # Highlight any unreplaced {{variable}} in a warning
+        remaining = re.findall(r"{{[^}]+}}", rend_subject + " " + rend_body)
+        if remaining:
+            warn = QLabel(f"⚠ Variables non reconnues : {', '.join(set(remaining))}")
+            warn.setStyleSheet("color: #b45309; font-size: 11px;")
+            layout.addWidget(warn)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _display_name(stem: str) -> str:
+    """Transforme 'followup_1_fr_a' en 'followup_1  ·  FR  ·  variante a'."""
+    parts = stem.split("_")
+    if len(parts) >= 3:
+        variant = parts[-1]
+        lang    = parts[-2].upper()
+        step    = "_".join(parts[:-2])
+        return f"{step}  ·  {lang}  ·  variante {variant}"
+    return stem
+
+
+def _set_combo(combo: QComboBox, value: str) -> None:
+    for i in range(combo.count()):
+        if combo.itemData(i) == value:
+            combo.setCurrentIndex(i)
+            return
+
+
+def _build_preview_vars() -> dict[str, str]:
+    sender_name    = getattr(settings, "sender_name", "") or "Votre Nom"
+    sender_website = getattr(settings, "sender_website", "") or "votresite.com"
+    return {
+        "first_name":     "Jean",
+        "last_name":      "Dupont",
+        "full_name":      "Jean Dupont",
+        "company":        "Acme Corp",
+        "job_title":      "Directeur",
+        "sex":            "homme",
+        "sexe":           "homme",
+        "civilite":       "Monsieur",
+        "sender_name":    sender_name,
+        "sender_email":   "expediteur@gmail.com",
+        "sender_website": sender_website,
+    }
+
+
+def _replace_vars(text: str, variables: dict[str, str]) -> str:
+    def _sub(match: re.Match[str]) -> str:
+        return variables.get(match.group(1).strip(), match.group(0))
+    return _VAR_PATTERN.sub(_sub, text)
