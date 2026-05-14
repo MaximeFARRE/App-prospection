@@ -162,11 +162,6 @@ class SupabaseRepository:
         le message exact.
         """
         email_hash = _hash_email(email)
-        payload = {
-            "email_hash": email_hash,
-            **{k: v for k, v in metadata.items() if k != "email"},
-        }
-        logger.debug("upsert_contact: payload keys=%s", list(payload.keys()))
         # Vérifier que le client est bien authentifié avant l'appel
         try:
             user = self._client.auth.get_user()
@@ -178,6 +173,12 @@ class SupabaseRepository:
             raise RuntimeError(
                 "Pas de session active — reconnectez-vous dans Paramètres → Base collaborative."
             )
+        payload = {
+            "email_hash": email_hash,
+            "contributed_by": str(uid),
+            **{k: v for k, v in metadata.items() if k != "email"},
+        }
+        logger.debug("upsert_contact: payload keys=%s", list(payload.keys()))
         resp = (
             self._client.table("contacts")
             .upsert(payload, on_conflict="email_hash")

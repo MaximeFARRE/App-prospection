@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.contacts (
   email_status    TEXT DEFAULT 'unknown', -- 'unknown' | 'valid' | 'invalid'
   quality_score   INT  DEFAULT 0,
   is_visible      BOOLEAN DEFAULT FALSE,  -- passe à TRUE après validation serveur
+  contributed_by  UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
@@ -119,6 +120,9 @@ CREATE POLICY "events_insert_own" ON public.contact_events
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
 -- users : chacun voit et modifie uniquement son propre profil
+CREATE POLICY "own_profile_insert" ON public.users
+  FOR INSERT WITH CHECK (id = auth.uid());
+
 CREATE POLICY "own_profile_select" ON public.users
   FOR SELECT USING (id = auth.uid());
 
