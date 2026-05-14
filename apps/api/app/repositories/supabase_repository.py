@@ -37,31 +37,37 @@ class SupabaseRepository:
     def sign_up(self, email: str, password: str) -> Optional[dict]:
         """Crée un nouveau compte Supabase Auth.
 
-        Retourne {user_id, user_email} si la création réussit, None sinon.
-        Si la confirmation email est activée côté Supabase, user_id est quand
-        même retourné mais la session est inactive jusqu'à confirmation.
+        Retourne {user_id, user_email, access_token, refresh_token} si la
+        création réussit, None sinon. Les tokens peuvent être None si la
+        confirmation email est activée côté Supabase.
         """
         try:
             resp = self._client.auth.sign_up({"email": email, "password": password})
             if resp.user is None:
                 return None
+            session = resp.session
             return {
                 "user_id": str(resp.user.id),
                 "user_email": resp.user.email,
+                "access_token": session.access_token if session else None,
+                "refresh_token": session.refresh_token if session else None,
             }
         except Exception:
             logger.exception("Supabase sign_up failed for %s", email)
             return None
 
     def login(self, email: str, password: str) -> Optional[dict]:
-        """Connexion Supabase. Retourne {user_id, user_email} ou None."""
+        """Connexion Supabase. Retourne {user_id, user_email, access_token, refresh_token} ou None."""
         try:
             resp = self._client.auth.sign_in_with_password(
                 {"email": email, "password": password}
             )
+            session = resp.session
             return {
                 "user_id": str(resp.user.id),
                 "user_email": resp.user.email,
+                "access_token": session.access_token if session else None,
+                "refresh_token": session.refresh_token if session else None,
             }
         except Exception:
             logger.exception("Supabase login failed for %s", email)
