@@ -5,6 +5,7 @@ from math import ceil
 from typing import Any
 
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -27,6 +28,11 @@ from workers.replies_workers import RepliesSyncWorker
 
 PAGE_SIZE = 100
 SENTIMENT_VALUES = ("positive", "negative", "neutral", "auto", "unknown")
+
+_SENTIMENT_COLORS: dict[str, QColor] = {
+    "positive": QColor("#dcfce7"),  # vert clair
+    "negative": QColor("#fecaca"),  # rouge clair
+}
 
 
 class _RepliesPageLoader(QThread):
@@ -216,20 +222,29 @@ class RepliesView(QWidget):
         self._table.setRowCount(len(self._rows))
 
         for row_index, row in enumerate(self._rows):
-            self._table.setItem(row_index, 0, QTableWidgetItem(row["contact_name"]))
-            self._table.setItem(row_index, 1, QTableWidgetItem(row["from_email"]))
-            self._table.setItem(row_index, 2, QTableWidgetItem(row["subject"]))
+            sentiment = row["sentiment"]
+            bg = _SENTIMENT_COLORS.get(sentiment)
+            brush = QBrush(bg) if bg is not None else QBrush()
+
+            for col, text in enumerate([row["contact_name"], row["from_email"], row["subject"]]):
+                item = QTableWidgetItem(text)
+                if bg is not None:
+                    item.setBackground(brush)
+                self._table.setItem(row_index, col, item)
 
             sentiment_combo = QComboBox()
-            for sentiment in SENTIMENT_VALUES:
-                sentiment_combo.addItem(sentiment, sentiment)
-            sentiment_combo.setCurrentText(row["sentiment"])
+            for s in SENTIMENT_VALUES:
+                sentiment_combo.addItem(s, s)
+            sentiment_combo.setCurrentText(sentiment)
             sentiment_combo.currentIndexChanged.connect(
                 lambda _index, rid=row["reply_id"], combo=sentiment_combo: self._on_sentiment_changed(rid, combo)
             )
             self._table.setCellWidget(row_index, 3, sentiment_combo)
 
-            self._table.setItem(row_index, 4, QTableWidgetItem(row["received_at"]))
+            date_item = QTableWidgetItem(row["received_at"])
+            if bg is not None:
+                date_item.setBackground(brush)
+            self._table.setItem(row_index, 4, date_item)
 
         self._is_rendering = False
         self._status_label.setText(f"{self._total_replies} réponse(s)")
@@ -276,6 +291,7 @@ class RepliesView(QWidget):
             combo.blockSignals(False)
             return
         self._rows[row_index]["sentiment"] = sentiment
+        self._apply_row_color(row_index, sentiment)
 
     def _mark_selected_reply(self, sentiment: str) -> None:
         row_index = self._selected_row_index()
@@ -293,6 +309,15 @@ class RepliesView(QWidget):
             combo.blockSignals(True)
             combo.setCurrentText(sentiment)
             combo.blockSignals(False)
+        self._apply_row_color(row_index, sentiment)
+
+    def _apply_row_color(self, row_index: int, sentiment: str) -> None:
+        bg = _SENTIMENT_COLORS.get(sentiment)
+        brush = QBrush(bg) if bg is not None else QBrush()
+        for col in (0, 1, 2, 4):
+            item = self._table.item(row_index, col)
+            if item is not None:
+                item.setBackground(brush)
 
     def _persist_sentiment(self, reply_id: int, sentiment: str) -> bool:
         db = SessionLocal()
