@@ -89,6 +89,15 @@ class CampaignsView(QWidget):
         self._dry_run_button.clicked.connect(self._run_dry_run)
         layout.addWidget(self._dry_run_button)
 
+        self._followup_dry_run_button = QPushButton("Préparer les relances du jour")
+        self._followup_dry_run_button.clicked.connect(self._run_followup_dry_run)
+        layout.addWidget(self._followup_dry_run_button)
+
+        self._followup_info_label = QLabel("Seuls les contacts en attente de relance sont inclus.")
+        self._followup_info_label.setStyleSheet("color: #64748b; font-size: 11px;")
+        self._followup_info_label.setWordWrap(True)
+        layout.addWidget(self._followup_info_label)
+
         self._summary_label = QLabel("0 à envoyer · 0 ignorés")
         self._summary_label.setStyleSheet("color: #334155; font-size: 12px; font-weight: 600;")
         layout.addWidget(self._summary_label)
@@ -184,6 +193,39 @@ class CampaignsView(QWidget):
         self._send_button.setEnabled(bool(self._queue))
         self._append_log("Simulation terminée.")
 
+    def _run_followup_dry_run(self) -> None:
+        campaign_name = self._campaign_name_input.text().strip()
+        if not campaign_name:
+            QMessageBox.warning(self, "Campagne", "Renseigne un nom de campagne.")
+            return
+
+        db = SessionLocal()
+        try:
+            result = prepare_campaign(campaign_name, db, dry_run=True)
+            followup_queue = [item for item in result.queue if item.step != "intro"]
+            self._queue = followup_queue
+            self._skipped_rows = _build_skipped_rows(result.skipped, db)
+        except Exception as exc:
+            QMessageBox.critical(self, "Relances", f"Impossible de préparer les relances:\n{exc}")
+            return
+        finally:
+            db.close()
+
+        self._populate_queue_table()
+        self._populate_skipped_table()
+
+        f1_count = sum(1 for item in self._queue if item.step == "followup_1")
+        f2_count = sum(1 for item in self._queue if item.step == "followup_2")
+        self._summary_label.setText(
+            f"{len(self._queue)} relances prêtes (followup_1: {f1_count}, followup_2: {f2_count})"
+        )
+        self._update_stats_label(result.stats)
+        self._send_button.setEnabled(bool(self._queue))
+        self._append_log(
+            f"Relances préparées : {len(self._queue)} "
+            f"(followup_1: {f1_count}, followup_2: {f2_count})."
+        )
+
     def _populate_queue_table(self) -> None:
         self._queue_table.setRowCount(len(self._queue))
         for row, item in enumerate(self._queue):
@@ -233,6 +275,7 @@ class CampaignsView(QWidget):
         self._send_worker = worker
         self._send_button.setEnabled(False)
         self._dry_run_button.setEnabled(False)
+        self._followup_dry_run_button.setEnabled(False)
         self._stop_button.setEnabled(True)
         self._stop_button.setText("Annuler")
         self._stop_button.setStyleSheet("background-color: #f59e0b; color: #111827; font-weight: 600;")
@@ -256,6 +299,7 @@ class CampaignsView(QWidget):
 
         self._send_button.setEnabled(bool(self._queue))
         self._dry_run_button.setEnabled(True)
+        self._followup_dry_run_button.setEnabled(True)
         self._stop_button.setEnabled(False)
         self._stop_button.setText("Stop")
         self._stop_button.setStyleSheet("")
