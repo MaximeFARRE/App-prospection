@@ -233,7 +233,7 @@ class CollaborativeView(QWidget):
         if contributed:
             parts.append(f"{contributed} contact(s) partagés avec succès")
         if skipped:
-            parts.append(f"{skipped} ignorés (email manquant ou score < 40 pts)")
+            parts.append(f"{skipped} ignorés (email manquant ou format invalide)")
         if not contributed and not skipped:
             parts.append("Aucun nouveau contact à partager")
         self._contribute_status.setText(". ".join(parts) + ".")
