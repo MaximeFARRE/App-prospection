@@ -96,11 +96,19 @@ class CollaborativeService:
                 rejection_reason="Email manquant",
             )
 
+        # Résolution du nom d'entreprise via la relation SQLAlchemy
+        company_name: str | None = None
+        if contact.company_id is not None:
+            from app.models.company import Company
+            company = self._db.get(Company, contact.company_id)
+            if company:
+                company_name = company.name
+
         metadata = {
             "first_name": contact.first_name,
             "last_name": contact.last_name,
             "job_title": contact.job_title,
-            "company_name": None,  # résolu via JOIN company en V2
+            "company_name": company_name,
             "country": contact.country,
             "linkedin_url": contact.linkedin_url,
             "quality_score": result.score,
