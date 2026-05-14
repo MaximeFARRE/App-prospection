@@ -91,6 +91,13 @@ CREATE POLICY "contacts_unlock_gate" ON public.contacts
     )
   );
 
+-- contacts : tout utilisateur authentifié peut contribuer (insérer / mettre à jour)
+CREATE POLICY "contacts_insert_authenticated" ON public.contacts
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+CREATE POLICY "contacts_update_authenticated" ON public.contacts
+  FOR UPDATE USING (auth.uid() IS NOT NULL);
+
 -- contributions : chacun voit et insère uniquement les siennes
 CREATE POLICY "own_contributions_select" ON public.contact_contributions
   FOR SELECT USING (user_id = auth.uid());
