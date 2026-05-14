@@ -55,10 +55,8 @@ def _make_repo():
                     refreshed.session.access_token,
                     refreshed.session.refresh_token,
                 )
-                client.auth.set_session(
-                    refreshed.session.access_token,
-                    refreshed.session.refresh_token,
-                )
+                access_token = refreshed.session.access_token
+                client.auth.set_session(access_token, refreshed.session.refresh_token)
                 logger.debug("_make_repo: session rafraîchie avec succès")
             else:
                 raise RuntimeError(
@@ -70,6 +68,13 @@ def _make_repo():
             raise RuntimeError(
                 "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
             ) from exc
+
+    # Forcer le JWT sur le client PostgREST — set_session ne propage pas
+    # toujours le token automatiquement selon la version de supabase-py.
+    current = client.auth.get_session()
+    effective_token = current.access_token if current else access_token
+    client.postgrest.auth(effective_token)
+    logger.debug("_make_repo: JWT forcé sur PostgREST (token[:20]=%s…)", effective_token[:20])
 
     return SupabaseRepository(client)
 
