@@ -27,54 +27,47 @@ def _make_repo():
             "URL ou clé Supabase manquante. "
             "Renseignez-les dans Paramètres → Base collaborative."
         )
-    client = create_client(url, key)
-
     session = get_supabase_session()
     access_token = session.get("access_token", "")
     refresh_token = session.get("refresh_token", "")
-    logger.debug("_make_repo: access_token présent=%s refresh_token présent=%s",
+    logger.debug("_make_repo: access_token présent=%s  refresh_token présent=%s",
                  bool(access_token), bool(refresh_token))
 
-    if not access_token and not refresh_token:
+    if not refresh_token:
         raise RuntimeError(
             "Non connecté à Supabase. "
             "Connectez-vous dans Paramètres → Base collaborative."
         )
+
+    # Toujours rafraîchir via le refresh_token pour obtenir un JWT frais.
+    # L'access_token stocké peut être expiré ; PostgREST rejetterait
+    # silencieusement un token expiré et auth.uid() retournerait NULL.
+    client = create_client(url, key)
     try:
-        client.auth.set_session(access_token, refresh_token)
-        user = client.auth.get_user()
-        logger.debug("_make_repo: session restaurée, user.id=%s", user.user.id if user and user.user else "?")
-    except Exception as e:
-        logger.warning("_make_repo: set_session échoué (%s) — tentative refresh", e)
-        # Access token expiré — tenter un refresh via le refresh token
-        try:
-            refreshed = client.auth.refresh_session(refresh_token)
-            if refreshed.session:
-                from services.settings_service import save_supabase_session
-                save_supabase_session(
-                    refreshed.session.access_token,
-                    refreshed.session.refresh_token,
-                )
-                access_token = refreshed.session.access_token
-                client.auth.set_session(access_token, refreshed.session.refresh_token)
-                logger.debug("_make_repo: session rafraîchie avec succès")
-            else:
-                raise RuntimeError(
-                    "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
-                )
-        except RuntimeError:
-            raise
-        except Exception as exc:
+        refreshed = client.auth.refresh_session(refresh_token)
+        if not refreshed.session:
+            raise RuntimeError("Refresh sans session retournée.")
+        fresh_access = refreshed.session.access_token
+        fresh_refresh = refreshed.session.refresh_token
+        from services.settings_service import save_supabase_session
+        save_supabase_session(fresh_access, fresh_refresh)
+        logger.debug("_make_repo: token rafraîchi, user=%s", refreshed.user.id if refreshed.user else "?")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.warning("_make_repo: refresh échoué (%s) — utilisation du token existant", exc)
+        # Fallback : utiliser l'access_token tel quel
+        if not access_token:
             raise RuntimeError(
                 "Session expirée — reconnectez-vous dans Paramètres → Base collaborative."
             ) from exc
+        fresh_access = access_token
 
-    # Forcer le JWT sur le client PostgREST — set_session ne propage pas
-    # toujours le token automatiquement selon la version de supabase-py.
-    current = client.auth.get_session()
-    effective_token = current.access_token if current else access_token
-    client.postgrest.auth(effective_token)
-    logger.debug("_make_repo: JWT forcé sur PostgREST (token[:20]=%s…)", effective_token[:20])
+    # Injecter le JWT directement dans les headers PostgREST.
+    # Ne pas passer par set_session dont la propagation vers postgrest
+    # dépend de la version de supabase-py.
+    client.postgrest.auth(fresh_access)
+    logger.debug("_make_repo: JWT injecté dans PostgREST (token[:30]=%s…)", fresh_access[:30])
 
     return SupabaseRepository(client)
 
