@@ -52,6 +52,9 @@ data/*.db*
 data/*.bin
 data/sqlite_as_txt.txt*
 
+# Données locales (paramètres runtime, non versionner)
+data/settings.json
+
 # Fichiers write-test de développement
 __write_test*
 data/__write_test*
