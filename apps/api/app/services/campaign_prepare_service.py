@@ -4,6 +4,7 @@ import math
 import random
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,6 +17,9 @@ from app.models.message import Message
 from app.services.eligibility_service import EligibilityResult, check_eligibility
 from app.services.mail_render_service import detect_language, render_for_contact
 from app.utils.email_normalization import normalize_email
+
+if TYPE_CHECKING:
+    from app.services.collaborative_service import CollaborativeService
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
@@ -43,6 +47,7 @@ class CampaignStats:
     estimated_max_days: int
     skipped_total: int
     skipped_reasons: dict[str, int]       # {"blocked": 3, "replied": 1, ...}
+    skipped_already_contacted_by_others: int = 0
 
 
 @dataclass(slots=True)
@@ -73,7 +78,12 @@ WEEKLY_LIMIT_MESSAGE_TYPES: tuple[str, ...] = ("intro", "followup_1", "followup_
 
 # ── Point d'entrée public ─────────────────────────────────────────────────────
 
-def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> PrepareResult:
+def prepare_campaign(
+    campaign_name: str,
+    db: Session,
+    dry_run: bool = False,
+    collaborative_service: Optional["CollaborativeService"] = None,
+) -> PrepareResult:
     _ = dry_run  # orchestration pure : aucun write dans cette étape
 
     accounts = settings.configured_gmail_accounts
@@ -117,6 +127,19 @@ def prepare_campaign(campaign_name: str, db: Session, dry_run: bool = False) -> 
                         contact_id=contact.id,
                         eligible=False,
                         reason="company_weekly_limit",
+                        next_step=None,
+                    )
+                )
+                continue
+
+        # Check collaboratif optionnel — sans effet si service absent ou désactivé
+        if collaborative_service and collaborative_service.is_enabled():
+            if collaborative_service.is_already_contacted_by_others(contact.email):
+                skipped.append(
+                    EligibilityResult(
+                        contact_id=contact.id,
+                        eligible=False,
+                        reason="already_contacted_by_others",
                         next_step=None,
                     )
                 )
@@ -296,6 +319,9 @@ def _compute_stats(
         estimated_max_days=estimated_max_days,
         skipped_total=len(skipped),
         skipped_reasons=skipped_reasons,
+        skipped_already_contacted_by_others=skipped_reasons.get(
+            "already_contacted_by_others", 0
+        ),
     )
 
 

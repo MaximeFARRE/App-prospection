@@ -18,9 +18,12 @@ from sqlalchemy.orm import Session
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.import_job import ImportJob
+from app.services.contact_validation_service import ContactValidationService
 from app.utils.csv_mapping import split_full_name
 from app.utils.email_normalization import normalize_email
 from app.utils.sex_normalization import normalize_sex
+
+_validator = ContactValidationService(threshold=60)
 
 
 # ── Résultat retourné au appelant ─────────────────────────────────────────────
@@ -241,6 +244,14 @@ def _process_row(
         source=source,
         source_prospect_id=source_prospect_id,
         source_business_id=_row_get(row, row_lookup, SOURCE_BUSINESS_ID_COLUMNS),
+        quality_score=_validator.score(Contact(
+            email=email_raw,
+            email_status=_row_get(row, row_lookup, EMAIL_STATUS_COLUMNS),
+            first_name=first_name,
+            last_name=last_name,
+            company_id=company_id,
+            linkedin_url=_row_get(row, row_lookup, LINKEDIN_COLUMNS),
+        )),
     )
     db.add(contact)
     if email_norm:

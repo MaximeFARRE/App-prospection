@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -56,6 +56,17 @@ class Contact(Base):
 
     # ── Statut ─────────────────────────────────────────────────────────────────
     is_blocked: Mapped[bool] = mapped_column(default=False)
+
+    # ── Score qualité (0–100) ──────────────────────────────────────────────────
+    quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # ── Base collaborative (optionnel) ─────────────────────────────────────────
+    collab_source_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )  # UUID du contact dans Supabase, None si contact purement local
+    collab_is_contributed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )  # True si ce contact a été contribué à la base collaborative
 
     # ── Timestamps ─────────────────────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -180,3 +180,24 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+class SupabaseSettings(BaseSettings):
+    """Paramètres Supabase — optionnels, chargés depuis .env uniquement."""
+
+    model_config = SettingsConfigDict(
+        env_file=str(_PROJECT_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+
+    def is_configured(self) -> bool:
+        """Vrai si l'URL et la clé anon sont toutes les deux renseignées."""
+        return bool(self.supabase_url and self.supabase_anon_key)
+
+
+supabase_settings = SupabaseSettings()

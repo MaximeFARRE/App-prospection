@@ -19,3 +19,9 @@ def ensure_schema_compatibility(engine: Engine) -> None:
             connection.execute(text("ALTER TABLE contacts ADD COLUMN email_checked_at DATETIME"))
         if "email_check_reason" not in contact_columns:
             connection.execute(text("ALTER TABLE contacts ADD COLUMN email_check_reason VARCHAR(255)"))
+        if "notes" not in contact_columns:
+            connection.execute(text("ALTER TABLE contacts ADD COLUMN notes TEXT"))
+        if "collab_source_id" not in contact_columns:
+            connection.execute(text("ALTER TABLE contacts ADD COLUMN collab_source_id VARCHAR(36)"))
+        if "collab_is_contributed" not in contact_columns:
+            connection.execute(text("ALTER TABLE contacts ADD COLUMN collab_is_contributed BOOLEAN NOT NULL DEFAULT 0"))

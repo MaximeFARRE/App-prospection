@@ -4,11 +4,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -20,8 +23,19 @@ from PyQt6.QtWidgets import (
 
 from app.core.config import GmailAccount, settings
 from services.gmail_setup_service import launch_gmail_setup
-from services.settings_service import get_settings, load_credentials, save_credentials, save_settings
+from services.settings_service import (
+    get_collaborative_config,
+    get_settings,
+    get_supabase_credentials,
+    load_credentials,
+    save_collaborative_config,
+    save_credentials,
+    save_settings,
+    save_supabase_credentials,
+    set_collaborative_enabled,
+)
 from widgets.settings_widgets import AccountCard, SendLimitsSection, SyncSection
+from workers.collaborative_workers import BulkContributeWorker, SupabaseLoginWorker, SupabaseSignUpWorker
 from workers.settings_workers import GmailConnectionWorker, GmailSyncWorker
 
 
@@ -30,11 +44,16 @@ _SPINNER_GIF = _PROJECT_ROOT / "apps" / "desktop" / "assets" / "spinner.gif"
 
 
 class SettingsView(QWidget):
+    collaborative_toggled = pyqtSignal(bool)  # émis quand le toggle change
+
     def __init__(self) -> None:
         super().__init__()
         self._tested_accounts: dict[int, bool | None] = {}
         self._test_workers: dict[int, GmailConnectionWorker] = {}
         self._sync_worker: GmailSyncWorker | None = None
+        self._login_worker: SupabaseLoginWorker | None = None
+        self._signup_worker: SupabaseSignUpWorker | None = None
+        self._bulk_worker: BulkContributeWorker | None = None
         self._sync_logs: list[str] = []
         self._loading_limits = False
 
@@ -120,6 +139,7 @@ class SettingsView(QWidget):
         sender_layout.addWidget(sender_save_btn)
         content.addWidget(sender_group)
 
+        content.addWidget(self._build_collaborative_section())
         content.addStretch(1)
 
         scroll.setWidget(container)
@@ -391,6 +411,197 @@ class SettingsView(QWidget):
         settings.sender_name = name
         settings.sender_website = website
         QMessageBox.information(self, "Expéditeur", "Informations expéditeur enregistrées.")
+
+    # ── Section collaborative ─────────────────────────────────────────────────
+
+    def _build_collaborative_section(self) -> QGroupBox:
+        group = QGroupBox("Base collaborative (optionnel)")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        cfg = get_collaborative_config()
+        supa_creds = get_supabase_credentials()
+
+        # Toggle
+        self._collab_toggle = QCheckBox("Activer le mode collaboratif")
+        self._collab_toggle.setChecked(bool(cfg.get("enabled", False)))
+        self._collab_toggle.toggled.connect(self._on_collab_toggled)
+        layout.addWidget(self._collab_toggle)
+
+        # ── Connexion à la base ───────────────────────────────────────────────
+        db_group = QGroupBox("Connexion à la base Supabase")
+        db_form = QFormLayout(db_group)
+        db_form.setContentsMargins(10, 10, 10, 10)
+        db_form.setSpacing(6)
+
+        self._supabase_url_input = QLineEdit()
+        self._supabase_url_input.setPlaceholderText("https://xxxxxxxxxxxx.supabase.co")
+        self._supabase_url_input.setText(supa_creds.get("supabase_url", ""))
+        db_form.addRow("URL de la base", self._supabase_url_input)
+
+        self._supabase_key_input = QLineEdit()
+        self._supabase_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._supabase_key_input.setPlaceholderText("eyJhbGciOiJIUzI1NiIsInR5c…  (clé anonyme)")
+        self._supabase_key_input.setText(supa_creds.get("supabase_anon_key", ""))
+        db_form.addRow("Clé anonyme (anon key)", self._supabase_key_input)
+
+        save_db_btn = QPushButton("Enregistrer la connexion")
+        save_db_btn.clicked.connect(self._save_supabase_credentials)
+        db_form.addWidget(save_db_btn)
+        layout.addWidget(db_group)
+
+        # ── Compte utilisateur ────────────────────────────────────────────────
+        user_group = QGroupBox("Compte utilisateur")
+        user_form = QFormLayout(user_group)
+        user_form.setContentsMargins(10, 10, 10, 10)
+        user_form.setSpacing(6)
+
+        self._collab_email = QLineEdit()
+        self._collab_email.setPlaceholderText("email@exemple.com")
+        self._collab_email.setText(cfg.get("user_email") or "")
+        user_form.addRow("Email", self._collab_email)
+
+        self._collab_password = QLineEdit()
+        self._collab_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._collab_password.setPlaceholderText("••••••••")
+        user_form.addRow("Mot de passe", self._collab_password)
+
+        login_row = QHBoxLayout()
+        self._collab_login_btn = QPushButton("Connexion")
+        self._collab_login_btn.clicked.connect(self._start_collab_login)
+        login_row.addWidget(self._collab_login_btn)
+
+        self._collab_signup_btn = QPushButton("Créer un compte")
+        self._collab_signup_btn.clicked.connect(self._start_collab_signup)
+        login_row.addWidget(self._collab_signup_btn)
+        login_row.addStretch()
+        user_form.addRow(login_row)
+        layout.addWidget(user_group)
+
+        # Statut
+        self._collab_status_label = QLabel()
+        self._collab_status_label.setWordWrap(True)
+        self._refresh_collab_status(cfg)
+        layout.addWidget(self._collab_status_label)
+
+        return group
+
+    def _refresh_collab_status(self, cfg: dict | None = None) -> None:
+        if cfg is None:
+            cfg = get_collaborative_config()
+        user_id = cfg.get("user_id")
+        credits_ = cfg.get("credits", 0)
+        if user_id:
+            email = cfg.get("user_email") or user_id
+            self._collab_status_label.setText(
+                f"● Connecté — {email} — {credits_} crédits disponibles"
+            )
+            self._collab_status_label.setStyleSheet("color: #16a34a;")
+        else:
+            self._collab_status_label.setText("Non connecté")
+            self._collab_status_label.setStyleSheet("color: #64748b;")
+
+    def _on_collab_toggled(self, enabled: bool) -> None:
+        set_collaborative_enabled(enabled)
+        self.collaborative_toggled.emit(enabled)
+
+    def _save_supabase_credentials(self) -> None:
+        url = self._supabase_url_input.text().strip()
+        key = self._supabase_key_input.text().strip()
+        if not url or not key:
+            QMessageBox.warning(self, "Champs requis", "L'URL et la clé anonyme sont obligatoires.")
+            return
+        save_supabase_credentials(url, key)
+        QMessageBox.information(self, "Supabase", "Connexion à la base enregistrée.")
+
+    def _start_collab_login(self) -> None:
+        if self._login_worker and self._login_worker.isRunning():
+            return
+        email = self._collab_email.text().strip()
+        password = self._collab_password.text()
+        if not email or not password:
+            QMessageBox.warning(self, "Connexion", "Email et mot de passe requis.")
+            return
+        self._collab_login_btn.setEnabled(False)
+        self._collab_status_label.setText("Connexion en cours…")
+        self._collab_status_label.setStyleSheet("color: #64748b;")
+        worker = SupabaseLoginWorker(email, password, self)
+        worker.login_success.connect(self._on_login_success)
+        worker.login_failed.connect(self._on_login_failed)
+        worker.login_success.connect(worker.deleteLater)
+        worker.login_failed.connect(worker.deleteLater)
+        self._login_worker = worker
+        worker.start()
+
+    def _on_login_success(self, user_id: str, user_email: str) -> None:
+        self._login_worker = None
+        self._collab_login_btn.setEnabled(True)
+        save_collaborative_config({"user_id": user_id, "user_email": user_email, "credits": 0})
+        self._refresh_collab_status()
+        QMessageBox.information(self, "Base collaborative", f"Connecté en tant que {user_email}")
+        self._start_bulk_contribute(user_id)
+
+    def _on_login_failed(self, message: str) -> None:
+        self._login_worker = None
+        self._collab_login_btn.setEnabled(True)
+        self._collab_status_label.setText(f"Échec : {message}")
+        self._collab_status_label.setStyleSheet("color: #dc2626;")
+
+    def _start_collab_signup(self) -> None:
+        if self._signup_worker and self._signup_worker.isRunning():
+            return
+        email = self._collab_email.text().strip()
+        password = self._collab_password.text()
+        if not email or not password:
+            QMessageBox.warning(self, "Créer un compte", "Email et mot de passe requis.")
+            return
+        self._collab_signup_btn.setEnabled(False)
+        self._collab_status_label.setText("Création du compte en cours…")
+        self._collab_status_label.setStyleSheet("color: #64748b;")
+        worker = SupabaseSignUpWorker(email, password, self)
+        worker.signup_success.connect(self._on_signup_success)
+        worker.signup_failed.connect(self._on_signup_failed)
+        worker.signup_success.connect(worker.deleteLater)
+        worker.signup_failed.connect(worker.deleteLater)
+        self._signup_worker = worker
+        worker.start()
+
+    def _on_signup_success(self, user_id: str, user_email: str) -> None:
+        self._signup_worker = None
+        self._collab_signup_btn.setEnabled(True)
+        save_collaborative_config({"user_id": user_id, "user_email": user_email, "credits": 0})
+        self._refresh_collab_status()
+        QMessageBox.information(
+            self,
+            "Base collaborative",
+            f"Compte créé et connecté en tant que {user_email}.\n"
+            "Vous pouvez maintenant utiliser la base collaborative.",
+        )
+        self._start_bulk_contribute(user_id)
+
+    def _on_signup_failed(self, message: str) -> None:
+        self._signup_worker = None
+        self._collab_signup_btn.setEnabled(True)
+        self._collab_status_label.setText(f"Échec : {message}")
+        self._collab_status_label.setStyleSheet("color: #dc2626;")
+
+    def _start_bulk_contribute(self, user_id: str) -> None:
+        if self._bulk_worker and self._bulk_worker.isRunning():
+            return
+        worker = BulkContributeWorker(user_id, self)
+        worker.finished.connect(self._on_bulk_contribute_done)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._bulk_worker = worker
+        worker.start()
+
+    def _on_bulk_contribute_done(self, contributed: int, skipped: int) -> None:
+        self._bulk_worker = None
+        if contributed:
+            self._collab_status_label.setText(
+                f"● Connecté — {contributed} contact(s) partagés avec la base collaborative"
+            )
 
     def _on_send_limits_changed(self) -> None:
         if self._loading_limits:
