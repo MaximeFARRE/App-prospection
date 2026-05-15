@@ -64,7 +64,7 @@ class CollaborativeView(QWidget):
         content.setSpacing(12)
 
         title = QLabel("Base collaborative")
-        title.setStyleSheet("color: #0f172a; font-size: 24px; font-weight: 700;")
+        title.setStyleSheet("color: #f1f5f9; font-size: 24px; font-weight: 700;")
         content.addWidget(title)
 
         content.addWidget(self._build_stats_section())
@@ -88,7 +88,7 @@ class CollaborativeView(QWidget):
             "Seuls les contacts non encore partagés et suffisamment qualifiés sont envoyés."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #64748b; font-size: 12px;")
+        desc.setStyleSheet("color: #94a3b8; font-size: 12px;")
         layout.addWidget(desc)
 
         btn_row = QHBoxLayout()
@@ -114,7 +114,7 @@ class CollaborativeView(QWidget):
         layout.addWidget(self._contribute_progress)
 
         self._contribute_status = QLabel("")
-        self._contribute_status.setStyleSheet("color: #64748b; font-size: 12px;")
+        self._contribute_status.setStyleSheet("color: #94a3b8; font-size: 12px;")
         layout.addWidget(self._contribute_status)
 
         return group
@@ -140,7 +140,7 @@ class CollaborativeView(QWidget):
 
         # ── Ligne 2 : top 3 contributeurs ─────────────────────────────────────
         top_group = QGroupBox("Top 3 contributeurs")
-        top_group.setStyleSheet("QGroupBox { font-size: 12px; }")
+        top_group.setStyleSheet("QGroupBox { font-size: 12px; color: #cbd5e1; }")
         top_layout = QHBoxLayout(top_group)
         top_layout.setContentsMargins(12, 8, 12, 8)
         top_layout.setSpacing(16)
@@ -149,7 +149,7 @@ class CollaborativeView(QWidget):
         self._top_labels: list[QLabel] = []
         for medal in medals:
             lbl = QLabel(f"{medal}  —")
-            lbl.setStyleSheet("font-size: 13px; color: #0f172a;")
+            lbl.setStyleSheet("font-size: 13px; color: #e2e8f0;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             top_layout.addWidget(lbl)
             self._top_labels.append(lbl)
@@ -170,7 +170,7 @@ class CollaborativeView(QWidget):
         """Retourne (widget_carte, label_valeur) pour une métrique."""
         card = QWidget()
         card.setStyleSheet(
-            "QWidget { background: #f8fafc; border: 1px solid #e2e8f0;"
+            "QWidget { background: #1e293b; border: 1px solid #334155;"
             " border-radius: 8px; }"
         )
         card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -180,14 +180,14 @@ class CollaborativeView(QWidget):
 
         val_lbl = QLabel(value)
         val_lbl.setStyleSheet(
-            "font-size: 26px; font-weight: 700; color: #0f172a;"
+            "font-size: 26px; font-weight: 700; color: #f1f5f9;"
             " border: none; background: transparent;"
         )
         val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet(
-            "font-size: 11px; color: #64748b; border: none; background: transparent;"
+            "font-size: 11px; color: #94a3b8; border: none; background: transparent;"
         )
         title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_lbl.setWordWrap(True)
@@ -205,7 +205,7 @@ class CollaborativeView(QWidget):
         # ── En-tête : prochain palier + badge accès complet ───────────────────
         header_row = QHBoxLayout()
         self._next_tier_label = QLabel("Prochain palier : 5 contributions → +5 contacts par contribution")
-        self._next_tier_label.setStyleSheet("color: #0f172a; font-size: 12px; font-weight: 600;")
+        self._next_tier_label.setStyleSheet("color: #e2e8f0; font-size: 12px; font-weight: 600;")
         header_row.addWidget(self._next_tier_label)
         header_row.addStretch()
         self._full_access_badge = QLabel("★ Accès complet")
@@ -229,7 +229,7 @@ class CollaborativeView(QWidget):
         # ── Contacts débloquables ─────────────────────────────────────────────
         credits_row = QHBoxLayout()
         self._credits_label = QLabel("5 contacts débloquables")
-        self._credits_label.setStyleSheet("color: #475569; font-size: 12px;")
+        self._credits_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
         credits_row.addWidget(self._credits_label)
         credits_row.addStretch()
         refresh_btn = QPushButton("↻ Rafraîchir")
@@ -259,7 +259,7 @@ class CollaborativeView(QWidget):
             self._tier_chips.append(chip)
             if i < len(milestones) - 1:
                 sep = QLabel("›")
-                sep.setStyleSheet("color: #cbd5e1; font-size: 14px;")
+                sep.setStyleSheet("color: #475569; font-size: 14px;")
                 sep.setFixedWidth(12)
                 sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 roadmap_row.addWidget(sep)
@@ -269,19 +269,19 @@ class CollaborativeView(QWidget):
 
     @staticmethod
     def _chip_style(state: str) -> str:
-        """Retourne le style CSS d'un chip de palier selon son état."""
+        """Retourne le style CSS d'un chip de palier selon son état (thème sombre)."""
         if state == "done":
             return (
-                "background: #dcfce7; color: #15803d; border: 1px solid #86efac;"
+                "background: #166534; color: #bbf7d0; border: 1px solid #22c55e;"
                 " border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 600;"
             )
         if state == "current":
             return (
-                "background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd;"
+                "background: #1e3a8a; color: #bfdbfe; border: 1px solid #3b82f6;"
                 " border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 700;"
             )
         return (  # future
-            "background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0;"
+            "background: #1e293b; color: #64748b; border: 1px solid #334155;"
             " border-radius: 6px; padding: 0 8px; font-size: 11px;"
         )
 
@@ -385,7 +385,7 @@ class CollaborativeView(QWidget):
         if not contributed and not skipped:
             parts.append("Aucun nouveau contact à partager")
         self._contribute_status.setText(" — ".join(parts))
-        self._contribute_status.setStyleSheet("color: #16a34a;" if contributed else "color: #dc2626;" if skipped else "color: #64748b;")
+        self._contribute_status.setStyleSheet("color: #4ade80;" if contributed else "color: #f87171;" if skipped else "color: #94a3b8;")
 
     def _on_contribute_error(self, message: str) -> None:
         self._bulk_worker = None
@@ -465,9 +465,9 @@ class CollaborativeView(QWidget):
             self._tier_bar.setValue(100)
             self._tier_bar.setFormat("100 / 100 contributions")
             self._next_tier_label.setText("Vous avez l'accès complet à toute la base !")
-            self._next_tier_label.setStyleSheet("color: #16a34a; font-size: 12px; font-weight: 700;")
+            self._next_tier_label.setStyleSheet("color: #4ade80; font-size: 12px; font-weight: 700;")
             self._credits_label.setText("Débloque autant de contacts que tu veux")
-            self._credits_label.setStyleSheet("color: #16a34a; font-size: 12px; font-weight: 600;")
+            self._credits_label.setStyleSheet("color: #4ade80; font-size: 12px; font-weight: 600;")
         else:
             # Trouver le palier courant
             tier_from, tier_to, next_threshold, reward = next(
@@ -482,11 +482,11 @@ class CollaborativeView(QWidget):
                 f"Prochain palier : {next_threshold} contributions → {reward}"
                 f"  (encore {remaining} contribution{'s' if remaining > 1 else ''})"
             )
-            self._next_tier_label.setStyleSheet("color: #0f172a; font-size: 12px; font-weight: 600;")
+            self._next_tier_label.setStyleSheet("color: #e2e8f0; font-size: 12px; font-weight: 600;")
 
             total = compute_unlockable(contributions)
             self._credits_label.setText(f"{total} contacts débloquables au total")
-            self._credits_label.setStyleSheet("color: #475569; font-size: 12px;")
+            self._credits_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
 
         # ── Roadmap des paliers (chips) ────────────────────────────────────────
         milestones_thresholds = [5, 10, 20, 50, 100]
