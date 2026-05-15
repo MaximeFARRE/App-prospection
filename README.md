@@ -6,12 +6,13 @@
   <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/SQLite-embedded-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/Gmail_API-OAuth2-EA4335?style=for-the-badge&logo=gmail&logoColor=white" alt="Gmail API">
+  <img src="https://img.shields.io/badge/Supabase-collaborative-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase">
   <img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/License-MIT-F7C948?style=for-the-badge" alt="MIT License">
 </p>
 
 <p align="center">
-  Desktop CRM for structured email prospecting — multi-account Gmail, bilingual templates, reply tracking, A/B testing, and zero external dependencies.
+  Desktop CRM for structured email prospecting — multi-account Gmail, bilingual templates, reply tracking, A/B testing, and a collaborative contact base powered by Supabase.
 </p>
 
 ---
@@ -37,6 +38,7 @@ Prospection CRM is a self-contained Windows desktop application for running pers
 | **Rate limiting** | Per-account daily & hourly caps, per-company weekly limits, randomised delays between sends |
 | **Bilingual templates** | Language auto-detected per contact (French / English) |
 | **CV attachment** | Optionally attach a PDF to every outreach email |
+| **Collaborative base** | Shared Supabase contact pool — contribute your contacts, unlock others', prioritise least-contacted prospects |
 
 ---
 
@@ -267,6 +269,61 @@ Duplicate detection runs automatically on import (normalised email first, then n
 5. After sending, go to the **Replies** tab and click **Sync Replies** to pull new Gmail replies and auto-classify them.
 
 Contacts who have already replied, been blocked, or were contacted too recently are automatically excluded from preparation.
+
+---
+
+## Collaborative Base
+
+The **Base collaborative** tab lets users share contacts and discover new prospects together via a shared Supabase database. Emails are never stored in clear text — only a SHA-256 hash is used for deduplication; the full contact is encrypted at rest.
+
+### How it works
+
+1. **Sign up / log in** — open *Settings → Base collaborative*, enter your Supabase email and password.
+2. **Contribute** — click *Contribuer mes contacts* to push qualifying local contacts to the shared pool. Each accepted contribution earns unlock credits.
+3. **Unlock** — use the spinner to pick how many contacts to unlock. Credits are computed from a tier system:
+
+| Contributions | Unlock budget |
+|---|---|
+| 0 | 5 free contacts |
+| 1–5 | +5 per contribution |
+| 10 | +100 bonus |
+| 20 | +200 bonus |
+| 50 | +500 bonus |
+| 100 | Unlimited |
+
+4. **Import** — click *Importer dans mes contacts* to copy unlocked contacts into your local database.
+
+### Prioritisation by contact frequency
+
+Unlocked contacts are sorted by how many times they have been reached across the whole network (least contacted first). The **Contacté** column in the contacts table shows:
+
+| Display | Meaning |
+|---|---|
+| *Jamais contacté* (green) | Never reached by any member |
+| Number (grey) | Contacted 1–4 times |
+| ⚠ N (orange) | Contacted 5–9 times — approaching saturation |
+| ● Saturé (N) (red) | Contacted 10+ times — likely to ignore cold outreach |
+
+The counter is maintained by a server-side PostgreSQL trigger on `contact_events` and is shared in real time across all members.
+
+### Enrichment sync
+
+When you enrich a contact that originally came from the collaborative base, the update is automatically pushed back to Supabase so everyone benefits:
+
+| Action | Fields synced |
+|---|---|
+| Edit contact dialog | first name, last name, job title, company, country, LinkedIn URL |
+| QuickEmailVerification | `email_status` (valid / invalid) |
+| Sex combo or batch detection | `sex` |
+| Inline name edit in table | first name, last name |
+
+All pushes are fire-and-forget — they run in a background thread and never block the UI. If Supabase is unreachable the update is silently skipped.
+
+### Privacy
+
+- Emails are stored as SHA-256 hashes on Supabase. The plain-text email is only available after a member explicitly unlocks the contact.
+- No member can delete a contact from the shared base — only the server can do so.
+- Row-Level Security policies ensure each member sees only their own contributions and unlocks.
 
 ---
 
