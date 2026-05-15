@@ -129,6 +129,48 @@ class SupabaseRepository:
             logger.exception("get_unlocked_count failed for user %s", user_id)
             return 0
 
+    def get_contributions_count(self, user_id: str) -> int:
+        """Nombre de contacts contribués par cet utilisateur."""
+        try:
+            resp = (
+                self._client.table("contact_contributions")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            return resp.count or 0
+        except Exception:
+            logger.exception("get_contributions_count failed for user %s", user_id)
+            return 0
+
+    def get_total_contacts_count(self) -> int:
+        """Nombre total de contacts dans la base Supabase."""
+        try:
+            resp = (
+                self._client.table("contacts")
+                .select("id", count="exact")
+                .execute()
+            )
+            return resp.count or 0
+        except Exception:
+            logger.exception("get_total_contacts_count failed")
+            return 0
+
+    def get_top_contributors(self, limit: int = 3) -> list[int]:
+        """Retourne les N meilleurs contributeurs (nombre de contributions, anonymisé)."""
+        try:
+            resp = (
+                self._client.table("contact_contributions")
+                .select("user_id")
+                .execute()
+            )
+            from collections import Counter
+            counts = Counter(row["user_id"] for row in (resp.data or []))
+            return sorted(counts.values(), reverse=True)[:limit]
+        except Exception:
+            logger.exception("get_top_contributors failed")
+            return []
+
     # ── Contacts débloqués ────────────────────────────────────────────────────
 
     def get_unlocked_contacts(

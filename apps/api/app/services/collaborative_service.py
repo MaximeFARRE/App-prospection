@@ -21,6 +21,44 @@ from app.services.contact_validation_service import ContactValidationService
 
 logger = logging.getLogger(__name__)
 
+# ── Système de paliers ────────────────────────────────────────────────────────
+#
+# Palier 1 (0→5)   : +5 contacts par contribution (progressif)
+# Palier 2 (5→10)  : bonus de +100 contacts à 10 contributions
+# Palier 3 (10→20) : bonus de +200 contacts à 20 contributions
+# Palier 4 (20→50) : bonus de +500 contacts à 50 contributions
+# Palier 5 (50→100): accès illimité à 100 contributions
+#
+# Chaque tuple : (from_incl, to_excl, next_threshold, reward_label)
+TIER_RANGES: tuple[tuple[int, int, int, str], ...] = (
+    (0,  5,   5,   "+5 contacts par contribution"),
+    (5,  10,  10,  "+100 contacts en bonus"),
+    (10, 20,  20,  "+200 contacts en bonus"),
+    (20, 50,  50,  "+500 contacts en bonus"),
+    (50, 100, 100, "Accès complet illimité"),
+)
+
+_FREE_CONTACTS: int = 5
+_FULL_ACCESS_THRESHOLD: int = 100
+
+
+def compute_unlockable(contributions: int) -> int:
+    """Total de contacts débloquables selon les paliers atteints.
+
+    Retourne -1 si l'accès est illimité (>= 100 contributions).
+    """
+    if contributions >= _FULL_ACCESS_THRESHOLD:
+        return -1
+    total = _FREE_CONTACTS
+    total += min(contributions, 5) * 5   # +5 par contribution (palier 1)
+    if contributions >= 10:
+        total += 100
+    if contributions >= 20:
+        total += 200
+    if contributions >= 50:
+        total += 500
+    return total
+
 
 @dataclass
 class ContributionResult:
@@ -28,6 +66,14 @@ class ContributionResult:
     contact_id: Optional[str]
     credits_awarded: int
     rejection_reason: Optional[str]
+
+
+@dataclass
+class CollabStats:
+    total_contacts: int          # contacts dans la base Supabase
+    user_unlocked: int           # contacts débloqués par cet utilisateur
+    user_contributed: int        # contacts partagés par cet utilisateur
+    top_contributors: list[int]  # top 3 anonymisés (nb contributions)
 
 
 class CollaborativeService:
@@ -52,15 +98,39 @@ class CollaborativeService:
 
     # ── Crédits ───────────────────────────────────────────────────────────────
 
-    def get_credits(self) -> int:
-        """Lit les crédits depuis Supabase. Retourne 0 si désactivé."""
+    def get_contributions_count(self) -> int:
+        """Nombre de contacts contribués par cet utilisateur."""
         if not self._enabled:
             return 0
-        return self._repo.get_user_credits(self._user_id)
+        return self._repo.get_contributions_count(self._user_id)
+
+    def has_full_access(self) -> bool:
+        """True si l'utilisateur a atteint 100 contributions (accès illimité)."""
+        return self.get_contributions_count() >= _FULL_ACCESS_THRESHOLD
+
+    def get_credits(self) -> int:
+        """Contacts débloquables selon les paliers atteints.
+
+        Retourne -1 si l'accès est illimité (>= 100 contributions).
+        """
+        if not self._enabled:
+            return 0
+        return compute_unlockable(self.get_contributions_count())
 
     def refresh_credits(self) -> int:
         """Alias explicite — force un aller-retour Supabase."""
         return self.get_credits()
+
+    def get_stats(self) -> CollabStats:
+        """Récupère les stats de la base collaborative en un seul appel groupé."""
+        if not self._enabled:
+            return CollabStats(0, 0, 0, [])
+        return CollabStats(
+            total_contacts=self._repo.get_total_contacts_count(),
+            user_unlocked=self._repo.get_unlocked_count(self._user_id),
+            user_contributed=self._repo.get_contributions_count(self._user_id),
+            top_contributors=self._repo.get_top_contributors(3),
+        )
 
     # ── Contribution ──────────────────────────────────────────────────────────
 
@@ -150,20 +220,29 @@ class CollaborativeService:
     def unlock_contacts(self, count: int) -> list[dict]:
         """Débloque `count` contacts depuis Supabase et les stocke localement.
 
-        Vérifie que l'utilisateur dispose de suffisamment de crédits avant
-        d'appeler le repository. Retourne la liste des contacts débloqués.
+        Règles :
+        - >= 100 contributions → accès illimité, on peut débloquer `count`.
+        - Sinon : budget = 5 (gratuits) + contributions - déjà débloqués.
         """
         if not self._enabled:
             return []
 
-        credits = self.get_credits()
-        if credits < count:
-            logger.warning(
-                "unlock_contacts: crédits insuffisants (%d < %d)", credits, count
-            )
-            return []
+        contributions = self.get_contributions_count()
 
-        contacts = self._repo.request_unlock(self._user_id, count)
+        if contributions >= _FULL_ACCESS_THRESHOLD:
+            effective_count = count
+        else:
+            already_unlocked = self._repo.get_unlocked_count(self._user_id)
+            budget = compute_unlockable(contributions) - already_unlocked
+            if budget <= 0:
+                logger.warning(
+                    "unlock_contacts: budget épuisé (contributions=%d, déjà débloqués=%d)",
+                    contributions, already_unlocked,
+                )
+                return []
+            effective_count = min(count, budget)
+
+        contacts = self._repo.request_unlock(self._user_id, effective_count)
         if not contacts:
             return []
 
