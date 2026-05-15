@@ -19,9 +19,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.services.collaborative_service import TIER_RANGES, compute_unlockable
 from services.settings_service import get_collaborative_config, save_collaborative_config
 from workers.collaborative_workers import (
     BulkContributeWorker,
+    FetchStatsWorker,
     ImportUnlockedWorker,
     SyncCreditsWorker,
     UnlockContactsWorker,
@@ -40,6 +42,7 @@ class CollaborativeView(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._credits_worker: SyncCreditsWorker | None = None
+        self._stats_worker: FetchStatsWorker | None = None
         self._unlock_worker: UnlockContactsWorker | None = None
         self._import_worker: ImportUnlockedWorker | None = None
         self._bulk_worker: BulkContributeWorker | None = None
@@ -64,6 +67,7 @@ class CollaborativeView(QWidget):
         title.setStyleSheet("color: #0f172a; font-size: 24px; font-weight: 700;")
         content.addWidget(title)
 
+        content.addWidget(self._build_stats_section())
         content.addWidget(self._build_credits_section())
         content.addWidget(self._build_contribute_section())
         content.addWidget(self._build_actions_section())
@@ -115,28 +119,171 @@ class CollaborativeView(QWidget):
 
         return group
 
+    def _build_stats_section(self) -> QGroupBox:
+        group = QGroupBox("Statistiques de la base")
+        outer = QVBoxLayout(group)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(10)
+
+        # ── Ligne 1 : 3 cartes métriques ──────────────────────────────────────
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(10)
+
+        self._stat_total = self._make_stat_card("Contacts dans la base", "—")
+        self._stat_unlocked = self._make_stat_card("Débloqués par moi", "—")
+        self._stat_contributed = self._make_stat_card("Partagés par moi", "—")
+
+        cards_row.addWidget(self._stat_total[0])
+        cards_row.addWidget(self._stat_unlocked[0])
+        cards_row.addWidget(self._stat_contributed[0])
+        outer.addLayout(cards_row)
+
+        # ── Ligne 2 : top 3 contributeurs ─────────────────────────────────────
+        top_group = QGroupBox("Top 3 contributeurs")
+        top_group.setStyleSheet("QGroupBox { font-size: 12px; }")
+        top_layout = QHBoxLayout(top_group)
+        top_layout.setContentsMargins(12, 8, 12, 8)
+        top_layout.setSpacing(16)
+
+        medals = ["🥇", "🥈", "🥉"]
+        self._top_labels: list[QLabel] = []
+        for medal in medals:
+            lbl = QLabel(f"{medal}  —")
+            lbl.setStyleSheet("font-size: 13px; color: #0f172a;")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            top_layout.addWidget(lbl)
+            self._top_labels.append(lbl)
+
+        top_layout.addStretch()
+
+        refresh_stats_btn = QPushButton("↻")
+        refresh_stats_btn.setFixedWidth(32)
+        refresh_stats_btn.setToolTip("Rafraîchir les statistiques")
+        refresh_stats_btn.clicked.connect(self._fetch_stats)
+        top_layout.addWidget(refresh_stats_btn)
+
+        outer.addWidget(top_group)
+        return group
+
+    @staticmethod
+    def _make_stat_card(title: str, value: str) -> tuple[QWidget, QLabel]:
+        """Retourne (widget_carte, label_valeur) pour une métrique."""
+        card = QWidget()
+        card.setStyleSheet(
+            "QWidget { background: #f8fafc; border: 1px solid #e2e8f0;"
+            " border-radius: 8px; }"
+        )
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(4)
+
+        val_lbl = QLabel(value)
+        val_lbl.setStyleSheet(
+            "font-size: 26px; font-weight: 700; color: #0f172a;"
+            " border: none; background: transparent;"
+        )
+        val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title_lbl = QLabel(title)
+        title_lbl.setStyleSheet(
+            "font-size: 11px; color: #64748b; border: none; background: transparent;"
+        )
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_lbl.setWordWrap(True)
+
+        layout.addWidget(val_lbl)
+        layout.addWidget(title_lbl)
+        return card, val_lbl
+
     def _build_credits_section(self) -> QGroupBox:
-        group = QGroupBox("Crédits")
-        layout = QHBoxLayout(group)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
+        group = QGroupBox("Crédits & paliers")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 14, 12, 12)
+        layout.setSpacing(10)
 
-        self._credits_bar = QProgressBar()
-        self._credits_bar.setRange(0, 100)
-        self._credits_bar.setValue(0)
-        self._credits_bar.setFormat("%v crédits")
-        self._credits_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self._credits_bar)
+        # ── En-tête : prochain palier + badge accès complet ───────────────────
+        header_row = QHBoxLayout()
+        self._next_tier_label = QLabel("Prochain palier : 5 contributions → +5 contacts par contribution")
+        self._next_tier_label.setStyleSheet("color: #0f172a; font-size: 12px; font-weight: 600;")
+        header_row.addWidget(self._next_tier_label)
+        header_row.addStretch()
+        self._full_access_badge = QLabel("★ Accès complet")
+        self._full_access_badge.setStyleSheet(
+            "color: #fff; background: #16a34a; padding: 2px 10px;"
+            " border-radius: 10px; font-size: 11px; font-weight: 700;"
+        )
+        self._full_access_badge.setVisible(False)
+        header_row.addWidget(self._full_access_badge)
+        layout.addLayout(header_row)
 
-        self._credits_label = QLabel("0 crédits")
-        layout.addWidget(self._credits_label)
+        # ── Barre de progression inter-palier ─────────────────────────────────
+        self._tier_bar = QProgressBar()
+        self._tier_bar.setRange(0, 5)
+        self._tier_bar.setValue(0)
+        self._tier_bar.setFormat("%v / %m contributions")
+        self._tier_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._tier_bar.setFixedHeight(18)
+        layout.addWidget(self._tier_bar)
 
+        # ── Contacts débloquables ─────────────────────────────────────────────
+        credits_row = QHBoxLayout()
+        self._credits_label = QLabel("5 contacts débloquables")
+        self._credits_label.setStyleSheet("color: #475569; font-size: 12px;")
+        credits_row.addWidget(self._credits_label)
+        credits_row.addStretch()
         refresh_btn = QPushButton("↻ Rafraîchir")
         refresh_btn.setFixedWidth(110)
         refresh_btn.clicked.connect(self._sync_credits)
-        layout.addWidget(refresh_btn)
+        credits_row.addWidget(refresh_btn)
+        layout.addLayout(credits_row)
+
+        # ── Roadmap des paliers ───────────────────────────────────────────────
+        roadmap_row = QHBoxLayout()
+        roadmap_row.setSpacing(4)
+        self._tier_chips: list[QLabel] = []
+        milestones = [
+            ("5",   "+25 contacts"),
+            ("10",  "+100 contacts"),
+            ("20",  "+200 contacts"),
+            ("50",  "+500 contacts"),
+            ("100", "Accès complet"),
+        ]
+        for i, (threshold, reward) in enumerate(milestones):
+            chip = QLabel(f"{threshold} ▸ {reward}")
+            chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chip.setFixedHeight(26)
+            chip.setStyleSheet(self._chip_style("future"))
+            chip.setToolTip(f"À {threshold} contributions : {reward}")
+            roadmap_row.addWidget(chip)
+            self._tier_chips.append(chip)
+            if i < len(milestones) - 1:
+                sep = QLabel("›")
+                sep.setStyleSheet("color: #cbd5e1; font-size: 14px;")
+                sep.setFixedWidth(12)
+                sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                roadmap_row.addWidget(sep)
+        layout.addLayout(roadmap_row)
 
         return group
+
+    @staticmethod
+    def _chip_style(state: str) -> str:
+        """Retourne le style CSS d'un chip de palier selon son état."""
+        if state == "done":
+            return (
+                "background: #dcfce7; color: #15803d; border: 1px solid #86efac;"
+                " border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 600;"
+            )
+        if state == "current":
+            return (
+                "background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd;"
+                " border-radius: 6px; padding: 0 8px; font-size: 11px; font-weight: 700;"
+            )
+        return (  # future
+            "background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0;"
+            " border-radius: 6px; padding: 0 8px; font-size: 11px;"
+        )
 
     def _build_actions_section(self) -> QGroupBox:
         group = QGroupBox("Actions")
@@ -253,7 +400,40 @@ class CollaborativeView(QWidget):
 
     def refresh(self) -> None:
         self._sync_credits()
+        self._fetch_stats()
         self._load_cached_contacts()
+
+    # ── Stats ─────────────────────────────────────────────────────────────────
+
+    def _fetch_stats(self) -> None:
+        if self._stats_worker and self._stats_worker.isRunning():
+            return
+        cfg = get_collaborative_config()
+        user_id = cfg.get("user_id")
+        if not user_id:
+            return
+        worker = FetchStatsWorker(str(user_id), self)
+        worker.stats_ready.connect(self._on_stats_ready)
+        worker.error.connect(lambda msg: None)  # silencieux — stats non critiques
+        worker.stats_ready.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._stats_worker = worker
+        worker.start()
+
+    def _on_stats_ready(
+        self, total: int, unlocked: int, contributed: int, top3: list
+    ) -> None:
+        self._stats_worker = None
+        self._stat_total[1].setText(f"{total:,}".replace(",", " "))
+        self._stat_unlocked[1].setText(str(unlocked))
+        self._stat_contributed[1].setText(str(contributed))
+
+        medals = ["🥇", "🥈", "🥉"]
+        for i, lbl in enumerate(self._top_labels):
+            if i < len(top3):
+                lbl.setText(f"{medals[i]}  {top3[i]:,} contributions".replace(",", " "))
+            else:
+                lbl.setText(f"{medals[i]}  —")
 
     # ── Crédits ───────────────────────────────────────────────────────────────
 
@@ -272,12 +452,66 @@ class CollaborativeView(QWidget):
         self._credits_worker = worker
         worker.start()
 
-    def _on_credits_updated(self, credits: int) -> None:
+    def _on_credits_updated(self, credits: int, contributions: int) -> None:
         self._credits_worker = None
-        self._credits_bar.setValue(min(credits, self._credits_bar.maximum()))
-        self._credits_label.setText(f"{credits} crédits")
-        save_collaborative_config({"credits": credits})
-        self.credits_updated.emit(credits)
+        full_access = credits == -1
+
+        # ── Badge accès complet ────────────────────────────────────────────────
+        self._full_access_badge.setVisible(full_access)
+
+        # ── Barre et label prochain palier ────────────────────────────────────
+        if full_access:
+            self._tier_bar.setRange(0, 100)
+            self._tier_bar.setValue(100)
+            self._tier_bar.setFormat("100 / 100 contributions")
+            self._next_tier_label.setText("Vous avez l'accès complet à toute la base !")
+            self._next_tier_label.setStyleSheet("color: #16a34a; font-size: 12px; font-weight: 700;")
+            self._credits_label.setText("Débloque autant de contacts que tu veux")
+            self._credits_label.setStyleSheet("color: #16a34a; font-size: 12px; font-weight: 600;")
+        else:
+            # Trouver le palier courant
+            tier_from, tier_to, next_threshold, reward = next(
+                (t for t in TIER_RANGES if contributions < t[1]),
+                TIER_RANGES[-1],
+            )
+            self._tier_bar.setRange(tier_from, tier_to)
+            self._tier_bar.setValue(contributions)
+            self._tier_bar.setFormat(f"%v / {tier_to} contributions")
+            remaining = tier_to - contributions
+            self._next_tier_label.setText(
+                f"Prochain palier : {next_threshold} contributions → {reward}"
+                f"  (encore {remaining} contribution{'s' if remaining > 1 else ''})"
+            )
+            self._next_tier_label.setStyleSheet("color: #0f172a; font-size: 12px; font-weight: 600;")
+
+            total = compute_unlockable(contributions)
+            self._credits_label.setText(f"{total} contacts débloquables au total")
+            self._credits_label.setStyleSheet("color: #475569; font-size: 12px;")
+
+        # ── Roadmap des paliers (chips) ────────────────────────────────────────
+        milestones_thresholds = [5, 10, 20, 50, 100]
+        for chip, threshold in zip(self._tier_chips, milestones_thresholds):
+            if full_access or contributions >= threshold:
+                chip.setStyleSheet(self._chip_style("done"))
+            elif contributions < threshold and any(
+                contributions >= t[0] and contributions < t[1]
+                for t in TIER_RANGES
+                if t[2] == threshold
+            ):
+                chip.setStyleSheet(self._chip_style("current"))
+            else:
+                # Palier cible actuel (premier non atteint)
+                tier_from, tier_to, next_thresh, _ = next(
+                    (t for t in TIER_RANGES if contributions < t[1]),
+                    TIER_RANGES[-1],
+                )
+                if threshold == next_thresh:
+                    chip.setStyleSheet(self._chip_style("current"))
+                else:
+                    chip.setStyleSheet(self._chip_style("future"))
+
+        save_collaborative_config({"credits": contributions})
+        self.credits_updated.emit(credits if credits >= 0 else 9999)
 
     # ── Déblocage ─────────────────────────────────────────────────────────────
 

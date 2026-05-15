@@ -163,9 +163,14 @@ class SupabaseLoginWorker(QThread):
 # ── Crédits ───────────────────────────────────────────────────────────────────
 
 class SyncCreditsWorker(QThread):
-    """Récupère les crédits depuis Supabase et les émet."""
+    """Récupère les crédits et le nombre de contributions depuis Supabase.
 
-    credits_updated = pyqtSignal(int)
+    Émet (credits, contributions_count) :
+    - credits = -1 signifie accès illimité (>= 100 contributions)
+    - credits >= 0 sinon (5 gratuits + contributions - déjà débloqués)
+    """
+
+    credits_updated = pyqtSignal(int, int)  # credits, contributions_count
     error = pyqtSignal(str)
 
     def __init__(self, user_id: str, parent: Optional[QWidget] = None) -> None:
@@ -177,8 +182,9 @@ class SyncCreditsWorker(QThread):
         try:
             repo = _make_repo()
             service = _make_service(repo, db, self._user_id)
+            contributions = service.get_contributions_count()
             credits = service.get_credits()
-            self.credits_updated.emit(credits)
+            self.credits_updated.emit(credits, contributions)
         except Exception as exc:
             logger.exception("SyncCreditsWorker failed")
             self.error.emit(str(exc))
@@ -314,6 +320,37 @@ class BulkContributeWorker(QThread):
         except Exception as exc:
             logger.exception("BulkContributeWorker failed")
             db.rollback()
+            self.error.emit(str(exc))
+        finally:
+            db.close()
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+
+class FetchStatsWorker(QThread):
+    """Récupère les statistiques de la base collaborative."""
+
+    stats_ready = pyqtSignal(int, int, int, list)  # total, unlocked, contributed, top3
+    error = pyqtSignal(str)
+
+    def __init__(self, user_id: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._user_id = user_id
+
+    def run(self) -> None:
+        db = SessionLocal()
+        try:
+            repo = _make_repo()
+            service = _make_service(repo, db, self._user_id)
+            stats = service.get_stats()
+            self.stats_ready.emit(
+                stats.total_contacts,
+                stats.user_unlocked,
+                stats.user_contributed,
+                stats.top_contributors,
+            )
+        except Exception as exc:
+            logger.exception("FetchStatsWorker failed")
             self.error.emit(str(exc))
         finally:
             db.close()
