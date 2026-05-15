@@ -315,13 +315,19 @@ class CollaborativeView(QWidget):
 
         return group
 
+    # Seuils pour le badge de saturation (nombre de prises de contact dans la base)
+    _SATURATION_WARN = 5       # orange dès 5 contacts
+    _SATURATION_HIGH = 10      # rouge dès 10 contacts
+
     def _build_contacts_table(self) -> QGroupBox:
         group = QGroupBox("Contacts débloqués")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(["Prénom", "Nom", "Société", "Pays", "Statut"])
+        self._table = QTableWidget(0, 6)
+        self._table.setHorizontalHeaderLabels(
+            ["Prénom", "Nom", "Société", "Pays", "Contacté", "Statut"]
+        )
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -417,6 +423,9 @@ class CollaborativeView(QWidget):
         worker.error.connect(lambda msg: None)  # silencieux — stats non critiques
         worker.stats_ready.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
+        # Garantit que self._stats_worker est vidé même en cas d'erreur,
+        # évitant un crash PyQt "wrapped C++ object deleted" au prochain refresh.
+        worker.finished.connect(lambda: setattr(self, "_stats_worker", None))
         self._stats_worker = worker
         worker.start()
 
@@ -449,6 +458,8 @@ class CollaborativeView(QWidget):
         worker.error.connect(lambda msg: self._credits_label.setText(f"Erreur : {msg}"))
         worker.credits_updated.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
+        # Même garantie que pour _stats_worker — évite le crash au prochain refresh.
+        worker.finished.connect(lambda: setattr(self, "_credits_worker", None))
         self._credits_worker = worker
         worker.start()
 
@@ -606,9 +617,32 @@ class CollaborativeView(QWidget):
             self._table.setItem(row_idx, 1, QTableWidgetItem(row.last_name or ""))
             self._table.setItem(row_idx, 2, QTableWidgetItem(row.company_name or ""))
             self._table.setItem(row_idx, 3, QTableWidgetItem(row.country or ""))
+
+            # ── Badge saturation ──────────────────────────────────────────────
+            count = row.contact_count or 0
+            if count == 0:
+                contact_text = "Jamais contacté"
+                contact_color = Qt.GlobalColor.darkGreen
+            elif count < self._SATURATION_WARN:
+                contact_text = str(count)
+                contact_color = Qt.GlobalColor.gray
+            elif count < self._SATURATION_HIGH:
+                contact_text = f"⚠ {count}"
+                contact_color = Qt.GlobalColor.yellow
+            else:
+                contact_text = f"● Saturé ({count})"
+                contact_color = Qt.GlobalColor.red
+            contact_item = QTableWidgetItem(contact_text)
+            contact_item.setForeground(contact_color)
+            if count >= self._SATURATION_WARN:
+                contact_item.setToolTip(
+                    f"Ce prospect a été contacté {count} fois au total dans la base."
+                )
+            self._table.setItem(row_idx, 4, contact_item)
+
             status = "✓ Importé" if row.imported_to_local else "En attente"
             item = QTableWidgetItem(status)
             item.setForeground(
                 Qt.GlobalColor.darkGreen if row.imported_to_local else Qt.GlobalColor.gray
             )
-            self._table.setItem(row_idx, 4, item)
+            self._table.setItem(row_idx, 5, item)

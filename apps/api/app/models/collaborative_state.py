@@ -34,6 +34,7 @@ class CollabUnlockedCache(Base):
 
     # ── Qualité ────────────────────────────────────────────────────────────────
     quality_score: Mapped[int] = mapped_column(Integer, default=0)
+    contact_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # ── Statut local ───────────────────────────────────────────────────────────
     imported_to_local: Mapped[bool] = mapped_column(Boolean, default=False)

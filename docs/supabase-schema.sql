@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS public.contacts (
   country         TEXT,
   linkedin_url    TEXT,
   email_status    TEXT DEFAULT 'unknown', -- 'unknown' | 'valid' | 'invalid'
+  sex             TEXT,                    -- 'homme' | 'femme' | 'ambigu' | NULL
   quality_score   INT  DEFAULT 0,
+  contact_count   INT  NOT NULL DEFAULT 0, -- nb de fois contacté (toute la base)
   is_visible      BOOLEAN DEFAULT FALSE,  -- passe à TRUE après validation serveur
   contributed_by  UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ DEFAULT now()

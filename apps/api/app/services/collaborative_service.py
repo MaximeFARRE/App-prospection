@@ -273,6 +273,7 @@ class CollaborativeService:
                 country=c.get("country"),
                 linkedin_url=c.get("linkedin_url"),
                 quality_score=c.get("quality_score", 0),
+                contact_count=c.get("contact_count", 0),
                 unlocked_at=datetime.utcnow(),
             )
             self._db.add(row)
