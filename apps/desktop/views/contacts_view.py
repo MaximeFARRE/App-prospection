@@ -416,14 +416,17 @@ class ContactsView(QWidget):
 
     def _persist_sex(self, contact_id: int, sex: str | None) -> bool:
         db = SessionLocal()
+        collab_id: str | None = None
+        norm_sex: str | None = None
         try:
             contact = contact_repository.set_sex(db, contact_id=contact_id, sex=sex)
             if contact is None:
                 QMessageBox.warning(self, "Contact", "Contact introuvable.")
                 return False
             db.commit()
+            collab_id = contact.collab_source_id
+            norm_sex = contact.sex
             self._status_label.setText("Sexe mis à jour.")
-            return True
         except Exception as exc:
             db.rollback()
             QMessageBox.warning(self, "Contact", f"Impossible de mettre à jour le sexe:\n{exc}")
@@ -431,8 +434,14 @@ class ContactsView(QWidget):
         finally:
             db.close()
 
+        if collab_id:
+            self._start_collab_push(collab_id, {"sex": norm_sex})
+        return True
+
     def _persist_names(self, contact_id: int, first_name: str, last_name: str) -> bool:
         db = SessionLocal()
+        collab_id: str | None = None
+        push_fields: dict = {}
         try:
             contact = contact_repository.set_names(
                 db,
@@ -444,13 +453,26 @@ class ContactsView(QWidget):
                 QMessageBox.warning(self, "Contact", "Contact introuvable.")
                 return False
             db.commit()
-            return True
+            collab_id = contact.collab_source_id
+            if collab_id:
+                push_fields = {"first_name": contact.first_name, "last_name": contact.last_name}
         except Exception as exc:
             db.rollback()
             QMessageBox.warning(self, "Contact", f"Impossible de mettre à jour le nom:\n{exc}")
             return False
         finally:
             db.close()
+
+        if collab_id and push_fields:
+            self._start_collab_push(collab_id, push_fields)
+        return True
+
+    def _start_collab_push(self, supabase_id: str, fields: dict) -> None:
+        """Lance un push best-effort vers Supabase sans bloquer l'UI."""
+        from workers.collaborative_workers import PushContactUpdateWorker
+        worker = PushContactUpdateWorker(supabase_id, fields, self)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
 
     def _row_index_for_contact(self, contact_id: int) -> int:
         for index, row in enumerate(self._rows):

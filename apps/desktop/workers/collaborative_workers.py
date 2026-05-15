@@ -382,3 +382,29 @@ class ImportUnlockedWorker(QThread):
             self.error.emit(str(exc))
         finally:
             db.close()
+
+
+class PushContactUpdateWorker(QThread):
+    """Pousse la mise à jour d'un contact vers Supabase en arrière-plan.
+
+    Fire-and-forget : aucun signal d'erreur n'est émis vers l'UI.
+    À utiliser depuis le thread principal pour les modifications en place
+    (changement de sexe inline, etc.) qui ne passent pas par un worker existant.
+    """
+
+    def __init__(
+        self,
+        supabase_id: str,
+        fields: dict,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._supabase_id = supabase_id
+        self._fields = fields
+
+    def run(self) -> None:
+        try:
+            repo = _make_repo()
+            repo.update_contact_fields(self._supabase_id, self._fields)
+        except Exception as exc:
+            logger.debug("PushContactUpdateWorker ignoré (id=%s): %s", self._supabase_id, exc)

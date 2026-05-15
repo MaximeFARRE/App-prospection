@@ -269,11 +269,12 @@ class SupabaseRepository:
             )
             already_ids = {row["contact_id"] for row in (already_resp.data or [])}
 
-            # Contacts visibles pas encore débloqués
+            # Contacts visibles pas encore débloqués — les moins contactés en priorité
             candidates_resp = (
                 self._client.table("contacts")
                 .select("*")
                 .eq("is_visible", True)
+                .order("contact_count", desc=False)
                 .limit(count + len(already_ids))
                 .execute()
             )
@@ -294,6 +295,29 @@ class SupabaseRepository:
         except Exception:
             logger.exception("request_unlock failed user=%s count=%d", user_id, count)
             return []
+
+    # ── Mise à jour collaborative ─────────────────────────────────────────────
+
+    def update_contact_fields(self, supabase_id: str, fields: dict) -> bool:
+        """Met à jour des champs sur un contact Supabase existant.
+
+        Seuls les champs de la liste d'autorisation sont envoyés.
+        Retourne True si la mise à jour a réussi, False sinon (best-effort).
+        """
+        _ALLOWED = {
+            "first_name", "last_name", "job_title", "company_name",
+            "country", "linkedin_url", "email_status", "sex",
+        }
+        payload = {k: v for k, v in fields.items() if k in _ALLOWED}
+        if not payload:
+            return True
+        try:
+            self._client.table("contacts").update(payload).eq("id", supabase_id).execute()
+            logger.debug("update_contact_fields: OK supabase_id=%s fields=%s", supabase_id, list(payload))
+            return True
+        except Exception:
+            logger.exception("update_contact_fields failed supabase_id=%s", supabase_id)
+            return False
 
     # ── Événements ────────────────────────────────────────────────────────────
 
