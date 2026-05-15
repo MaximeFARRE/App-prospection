@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -56,6 +56,9 @@ class Contact(Base):
 
     # ── Statut ─────────────────────────────────────────────────────────────────
     is_blocked: Mapped[bool] = mapped_column(default=False)
+
+    # ── Score qualité (0–100) ──────────────────────────────────────────────────
+    quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Base collaborative (optionnel) ─────────────────────────────────────────
     collab_source_id: Mapped[str | None] = mapped_column(
